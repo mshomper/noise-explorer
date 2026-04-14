@@ -1,0 +1,1492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Noise Scaffold Explorer</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%;background:#06080f;color:#e0e0ff;font-family:system-ui,sans-serif}
+#container{display:flex;flex-direction:column;height:100vh}
+#cw{position:relative;background:#06080f;border-radius:12px 12px 0 0;overflow:hidden;border:0.5px solid #2a2a3a;flex:1;min-height:0;margin:16px 14px 0}
+canvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges}
+#status{position:absolute;top:10px;right:10px;background:rgba(6,8,15,0.85);padding:5px 10px;border-radius:6px;font-size:11px;color:#555;pointer-events:none;border:0.5px solid #2a2a3a}
+#panel{background:#111118;border:0.5px solid #2a2a3a;border-top:none;border-radius:0 0 12px 12px;padding:12px 14px;overflow-y:auto;max-height:52vh;margin:0 14px 14px}
+h1{font-size:13px;font-weight:500;color:#7c8aaa;letter-spacing:0.08em;text-transform:uppercase;margin:14px 14px 10px;flex-shrink:0}
+/* Dividers */
+hr.divider{border:none;border-top:0.5px solid #2a2a3a;margin:10px 0}
+/* Section labels (green, like TPMS eqbar-label) */
+.sec-lbl{font-size:10px;color:#18f370;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:5px}
+/* Compact horizontal slider row */
+.sc-group{display:flex;align-items:center;gap:6px;margin-bottom:22px}
+.sc-group label{font-size:12px;color:#888;white-space:nowrap;min-width:84px}
+.sc-group input[type=range]{flex:1;accent-color:#22d3ee;height:5px;background:#1a1a2e;border-radius:3px;outline:none;-webkit-appearance:none;appearance:none}
+.sc-group input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:26px;height:26px;background:#0e1a2e;border:2.5px solid #22d3ee;border-radius:50%;cursor:pointer;box-shadow:0 0 6px rgba(34,211,238,0.35)}
+.sc-group input[type=range]::-moz-range-thumb{width:26px;height:26px;background:#0e1a2e;border:2.5px solid #22d3ee;border-radius:50%;cursor:pointer;box-shadow:0 0 6px rgba(34,211,238,0.35)}
+.sc-group .sv{font-size:12px;font-weight:500;color:#e0e0ff;min-width:40px;font-variant-numeric:tabular-nums;text-align:right}
+/* Mode button strips */
+.mode-strip{display:flex;gap:4px}
+.mode-btn{font-size:11px;padding:3px 10px;border:0.5px solid #3a3a5a;border-radius:20px;background:transparent;color:#888;cursor:pointer}
+.mode-btn.active{background:#7c6ff7;color:#fff;border-color:#7c6ff7}
+/* Selects and number inputs */
+select{font-size:12px;padding:3px 6px;background:#1a1a2e;border:0.5px solid #3a3a5a;border-radius:5px;color:#e0e0ff;cursor:pointer;width:100%}
+input[type=number]{font-size:12px;padding:2px 4px;background:#1a1a2e;border:0.5px solid #3a3a5a;border-radius:5px;color:#e0e0ff;width:56px;text-align:center}
+/* surf-controls flex rows (like TPMS) */
+.surf-controls{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-bottom:8px}
+/* Run / export buttons */
+#runHomoBtn{font-size:12px;padding:4px 14px;border:0.5px solid #7c6ff7;border-radius:20px;background:#7c6ff7;color:#fff;cursor:pointer;font-weight:500}
+#runHomoBtn:disabled{opacity:0.5;cursor:default}
+#exportBtn{font-size:12px;padding:3px 10px;border:0.5px solid #2a2a3a;border-radius:20px;background:transparent;color:#666;cursor:pointer;width:100%;margin-top:6px}
+/* Metric cards */
+.metric{background:#0e0e1a;border:0.5px solid #2a2a3a;border-radius:8px;padding:7px 8px;text-align:center}
+.metric .mv{font-size:15px;font-weight:500;color:#e0e0ff}
+.metric .ml{font-size:10px;color:#555;margin-top:1px}
+/* homo controls row */
+.homo-controls{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-bottom:8px}
+.homo-controls label{font-size:12px;color:#888;display:flex;align-items:center;gap:4px}
+</style>
+</head>
+<body>
+
+<div id="container">
+  <h1>Noise Scaffold Explorer <span style="font-size:10px;color:#3a3a5a;margin-left:6px">v1.0</span></h1>
+  <div id="cw">
+    <canvas id="glCanvas" style="display:none;"></canvas>
+    <canvas id="sectionCanvas"></canvas>
+    <div id="status">Ready</div>
+  </div>
+  <div id="panel">
+
+    <!-- View mode + slice -->
+    <div class="surf-controls">
+      <div class="sc-group">
+        <label>view</label>
+        <div class="mode-strip">
+          <button class="mode-btn" id="btnViewSheet" onclick="onViewModeChange('sheet')">Sheet 3D</button>
+          <button class="mode-btn active" id="btnViewSection" onclick="onViewModeChange('section')">Section 2D</button>
+        </div>
+      </div>
+      <div class="sc-group" id="sliceControl">
+        <label>slice pos</label>
+        <input type="range" id="slicePos" min="0" max="1" step="0.01" value="0.5" oninput="onSliceChange(this)">
+        <span class="sv" id="sliceValue">0.50</span>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Noise field -->
+    <div style="margin-bottom:8px">
+      <div class="sec-lbl">noise field</div>
+      <select id="noiseType" onchange="onNoiseTypeChange()">
+        <option value="simplex">Simplex</option>
+        <option value="cellular">Cellular (F2-F1)</option>
+        <option value="fbm">FBM (Fractal)</option>
+        <option value="ridged">Ridged FBM</option>
+        <option value="billow">Billow</option>
+        <option value="warp">Domain Warped</option>
+        <option value="curl">Curl</option>
+      </select>
+    </div>
+
+    <div class="sc-group" id="distanceMetricControl" style="display:none;">
+      <label>distance</label>
+      <select id="distanceMetric" onchange="regenerate()" style="flex:1;width:auto">
+        <option value="euclidean">Euclidean</option>
+        <option value="manhattan">Manhattan</option>
+        <option value="chebyshev">Chebyshev</option>
+      </select>
+    </div>
+
+    <div class="sc-group">
+      <label>frequency</label>
+      <input type="range" id="frequency" min="0.01" max="1.0" step="0.01" value="0.30" oninput="onParamChange(this,'freqValue')">
+      <span class="sv" id="freqValue">0.30</span>
+    </div>
+
+    <div class="sc-group" id="octavesControl" style="display:none;">
+      <label>octaves</label>
+      <input type="range" id="octaves" min="1" max="8" step="1" value="4" oninput="onParamChange(this,'octavesValue')">
+      <span class="sv" id="octavesValue">4</span>
+    </div>
+    <div class="sc-group" id="lacunarityControl" style="display:none;">
+      <label>lacunarity</label>
+      <input type="range" id="lacunarity" min="1.5" max="3.0" step="0.1" value="2.0" oninput="onParamChange(this,'lacunarityValue')">
+      <span class="sv" id="lacunarityValue">2.00</span>
+    </div>
+    <div class="sc-group" id="gainControl" style="display:none;">
+      <label>gain</label>
+      <input type="range" id="gain" min="0.1" max="0.9" step="0.05" value="0.5" oninput="onParamChange(this,'gainValue')">
+      <span class="sv" id="gainValue">0.50</span>
+    </div>
+    <div class="sc-group" id="warpControl" style="display:none;">
+      <label>warp strength</label>
+      <input type="range" id="warpStrength" min="0" max="3" step="0.1" value="1.0" oninput="onParamChange(this,'warpValue')">
+      <span class="sv" id="warpValue">1.00</span>
+    </div>
+    <div class="sc-group" id="curlStepControl" style="display:none;">
+      <label>curl step</label>
+      <input type="range" id="curlStep" min="0.05" max="0.5" step="0.01" value="0.10" oninput="onParamChange(this,'curlStepValue')">
+      <span class="sv" id="curlStepValue">0.10</span>
+    </div>
+    <div class="sc-group" id="potScaleControl" style="display:none;">
+      <label>potential scale</label>
+      <input type="range" id="potentialScale" min="0.5" max="3.0" step="0.1" value="1.0" oninput="onParamChange(this,'potScaleValue')">
+      <span class="sv" id="potScaleValue">1.00</span>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Scaffold geometry -->
+    <div class="sec-lbl">scaffold geometry</div>
+
+    <div class="surf-controls" style="margin-bottom:6px">
+      <div class="sc-group" style="margin-bottom:0">
+        <label>topology</label>
+        <div class="mode-strip">
+          <button class="mode-btn active" id="btnSheet" onclick="onTopologyToggle('sheet')">Sheet</button>
+          <button class="mode-btn" id="btnSolid" onclick="onTopologyToggle('solid')">Solid</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sc-group">
+      <label>center</label>
+      <input type="range" id="isoLevel" min="-1" max="1" step="0.01" value="0" oninput="onParamChange(this,'isoValue')">
+      <span class="sv" id="isoValue">0.00</span>
+    </div>
+    <div class="sc-group">
+      <label>half-width</label>
+      <input type="range" id="thickness" min="0.01" max="0.5" step="0.01" value="0.15" oninput="onParamChange(this,'thicknessValue')">
+      <span class="sv" id="thicknessValue">0.15</span>
+    </div>
+    <div class="sc-group">
+      <label>smoothing</label>
+      <input type="range" id="smoothing" min="0" max="1" step="0.01" value="0" oninput="onParamChange(this,'smoothingValue')">
+      <span class="sv" id="smoothingValue">0.00</span>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Void perforation -->
+    <div class="sec-lbl">perforation</div>
+    <div class="surf-controls" style="margin-bottom:6px">
+      <div class="sc-group" style="margin-bottom:0">
+        <label>voids</label>
+        <div class="mode-strip">
+          <button class="mode-btn active" id="btnVoidOff" onclick="onVoidToggle(false)">off</button>
+          <button class="mode-btn" id="btnVoidOn" onclick="onVoidToggle(true)">on</button>
+        </div>
+      </div>
+      <div class="sc-group" id="voidTypeControl" style="margin-bottom:0;display:none">
+        <label>type</label>
+        <div class="mode-strip">
+          <button class="mode-btn active" id="btnVoidSphere" onclick="onVoidTypeChange('spherical')">spherical</button>
+          <button class="mode-btn" id="btnVoidOrganic" onclick="onVoidTypeChange('organic')">organic</button>
+        </div>
+      </div>
+    </div>
+    <div id="voidSliders" style="display:none">
+      <div class="sc-group">
+        <label>hole frequency</label>
+        <input type="range" id="holeFreq" min="0.1" max="3.0" step="0.05" value="1.0" oninput="onParamChange(this,'holeFreqValue')">
+        <span class="sv" id="holeFreqValue">1.00</span>
+      </div>
+      <div class="sc-group">
+        <label>hole radius</label>
+        <input type="range" id="holeRadius" min="0.01" max="0.9" step="0.01" value="0.3" oninput="onParamChange(this,'holeRadiusValue')">
+        <span class="sv" id="holeRadiusValue">0.30</span>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Resolution (section view) -->
+    <div class="surf-controls" style="margin-bottom:0">
+      <div class="sc-group" style="margin-bottom:0">
+        <label>resolution</label>
+        <div class="mode-strip">
+          <button class="mode-btn active" id="btn64" onclick="onResChange(64)">64&#179;</button>
+          <button class="mode-btn" id="btn128" onclick="onResChange(128)">128&#179;</button>
+        </div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Homogenization -->
+    <div class="sec-lbl">homogenization (MIL-HS)</div>
+    <div class="homo-controls">
+      <label>grid
+        <select id="homoGrid" style="width:70px">
+          <option value="32">32&#179;</option>
+          <option value="48" selected>48&#179;</option>
+          <option value="64">64&#179;</option>
+        </select>
+      </label>
+      <label>E_s (GPa) <input type="number" id="homoEs" value="100" min="1" max="1000" step="10"></label>
+      <label>&#957; <input type="number" id="homoNu" value="0.3" min="0" max="0.49" step="0.01"></label>
+      <button id="runHomoBtn" onclick="onRunHomogenization()">Run homogenization</button>
+    </div>
+    <div id="homoStatus" style="font-size:11px;color:#555;margin-bottom:7px;min-height:15px"></div>
+    <div id="homoResults" style="display:none;margin-bottom:8px">
+      <!-- Metric cards — 4 column grid -->
+      <div id="homoMetrics" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:6px"></div>
+      <!-- Zener bar + ellipsoid side by side -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+        <!-- Zener A bar -->
+        <div style="background:#0e0e1a;border:0.5px solid #2a2a3a;border-radius:8px;padding:7px 8px">
+          <div style="font-size:10px;color:#555;margin-bottom:5px">directional stiffness</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <div style="font-size:11px;color:#555">A =</div>
+            <div id="zener-val" style="font-size:15px;font-weight:500;color:#888">—</div>
+            <div id="zener-label" style="font-size:10px;color:#555;flex:1;text-align:right">—</div>
+          </div>
+          <div style="position:relative;height:5px;background:#1a1a2a;border-radius:3px;margin-bottom:3px">
+            <div style="position:absolute;left:0;top:0;bottom:0;width:100%;border-radius:3px;background:linear-gradient(90deg,#e879f9 0%,#555 40%,#555 60%,#22d3ee 100%);opacity:0.4"></div>
+            <div style="position:absolute;left:40%;top:-1px;width:1px;height:7px;background:#555;opacity:0.8"></div>
+            <div id="zener-marker" style="position:absolute;top:-2px;width:2px;height:9px;background:#e0e0ff;border-radius:1px;left:40%;transition:left 0.4s"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:#555">
+            <span>axial</span><span>A=1</span><span>diagonal</span>
+          </div>
+        </div>
+        <!-- Stiffness ellipsoid — padding-bottom trick forces square at any width -->
+        <div style="background:#0e0e1a;border:0.5px solid #2a2a3a;border-radius:8px;padding:6px">
+          <div style="font-size:10px;color:#555;margin-bottom:4px">stiffness ellipsoid</div>
+          <div id="ellcv-wrap" style="position:relative;width:100%;padding-bottom:100%">
+            <canvas id="ellcv" style="position:absolute;top:0;left:0;width:100%;height:100%;border-radius:4px;display:block"></canvas>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:#444;line-height:1.5">&#9888; Statistical homogeneity assumed — noise is not periodic. Higher frequency improves convergence.</div>
+    </div>
+    <button id="exportBtn" onclick="onExportJSON()">Export JSON</button>
+
+  </div>
+</div>
+
+<script>
+var currentGrid = null;
+var currentViewMode = 'section';
+var currentResolution = 64;
+var debounceTimer = null;
+var invertSolid = false;
+var voidEnabled = false;
+var voidType = 'spherical';
+
+function onVoidToggle(enabled) {
+  voidEnabled = enabled;
+  document.getElementById('btnVoidOff').classList.toggle('active', !enabled);
+  document.getElementById('btnVoidOn').classList.toggle('active', enabled);
+  document.getElementById('voidTypeControl').style.display = enabled ? 'flex' : 'none';
+  document.getElementById('voidSliders').style.display = enabled ? 'block' : 'none';
+  regenerate();
+}
+
+function onVoidTypeChange(type) {
+  voidType = type;
+  document.getElementById('btnVoidSphere').classList.toggle('active', type === 'spherical');
+  document.getElementById('btnVoidOrganic').classList.toggle('active', type === 'organic');
+  regenerate();
+}
+
+function onTopologyToggle(mode) {
+  invertSolid = (mode === 'solid');
+  document.getElementById('btnSheet').style.background  = invertSolid ? 'transparent' : '#7c6ff7';
+  document.getElementById('btnSheet').style.color        = invertSolid ? '#888' : '#fff';
+  document.getElementById('btnSheet').style.borderColor  = invertSolid ? '#3a3a5a' : '#7c6ff7';
+  document.getElementById('btnSolid').style.background  = invertSolid ? '#7c6ff7' : 'transparent';
+  document.getElementById('btnSolid').style.color        = invertSolid ? '#fff' : '#888';
+  document.getElementById('btnSolid').style.borderColor  = invertSolid ? '#7c6ff7' : '#3a3a5a';
+  regenerate();
+}
+
+// ── DeterministicNoise ────────────────────────────────────────────────────
+// JavaScript port of the GLSL noise functions used in the 3D shader.
+// Uses identical hash chains so prepass and GPU agree on field structure.
+// No random seed — same parameters always produce the same noise field.
+var DeterministicNoise = (function() {
+  function mod289(x) { return x - Math.floor(x / 289.0) * 289.0; }
+  function permute(x) { return mod289(((x * 34.0) + 1.0) * x); }
+  function tis(r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+  function snoise(vx, vy, vz) {
+    var C0=1.0/6.0, C1=1.0/3.0;
+    var s=(vx+vy+vz)*C1;
+    var ix=Math.floor(vx+s), iy=Math.floor(vy+s), iz=Math.floor(vz+s);
+    var t=(ix+iy+iz)*C0;
+    var x0x=vx-ix+t, x0y=vy-iy+t, x0z=vz-iz+t;
+    var gx=x0x>=x0y?1:0, gy=x0y>=x0z?1:0, gz=x0z>=x0x?1:0;
+    var lx=1-gx, ly=1-gy, lz=1-gz;
+    var i1x=Math.min(gx,lz), i1y=Math.min(gy,lx), i1z=Math.min(gz,ly);
+    var i2x=Math.max(gx,lz), i2y=Math.max(gy,lx), i2z=Math.max(gz,ly);
+    var x1x=x0x-i1x+C0, x1y=x0y-i1y+C0, x1z=x0z-i1z+C0;
+    var x2x=x0x-i2x+C1, x2y=x0y-i2y+C1, x2z=x0z-i2z+C1;
+    var x3x=x0x-0.5, x3y=x0y-0.5, x3z=x0z-0.5;
+    ix=mod289(ix); iy=mod289(iy); iz=mod289(iz);
+    var p0=permute(permute(permute(iz)+iy)+ix);
+    var p1=permute(permute(permute(iz+i1z)+iy+i1y)+ix+i1x);
+    var p2=permute(permute(permute(iz+i2z)+iy+i2y)+ix+i2x);
+    var p3=permute(permute(permute(iz+1)+iy+1)+ix+1);
+    var nx=0.285714285714, ny=-0.928571428571, nz=0.142857142857;
+    var j0=p0-49*Math.floor(p0*nz*nz);
+    var j1=p1-49*Math.floor(p1*nz*nz);
+    var j2=p2-49*Math.floor(p2*nz*nz);
+    var j3=p3-49*Math.floor(p3*nz*nz);
+    var x0_=Math.floor(j0*nz), y0_=Math.floor(j0-7*x0_);
+    var x1_=Math.floor(j1*nz), y1_=Math.floor(j1-7*x1_);
+    var x2_=Math.floor(j2*nz), y2_=Math.floor(j2-7*x2_);
+    var x3_=Math.floor(j3*nz), y3_=Math.floor(j3-7*x3_);
+    var xs0=x0_*nx+ny, ys0=y0_*nx+ny;
+    var xs1=x1_*nx+ny, ys1=y1_*nx+ny;
+    var xs2=x2_*nx+ny, ys2=y2_*nx+ny;
+    var xs3=x3_*nx+ny, ys3=y3_*nx+ny;
+    var h0=1-Math.abs(xs0)-Math.abs(ys0);
+    var h1=1-Math.abs(xs1)-Math.abs(ys1);
+    var h2=1-Math.abs(xs2)-Math.abs(ys2);
+    var h3=1-Math.abs(xs3)-Math.abs(ys3);
+    var sh0=h0<=0?-1:0, sh1=h1<=0?-1:0, sh2=h2<=0?-1:0, sh3=h3<=0?-1:0;
+    var pp0x=xs0+(Math.floor(xs0)*2+1)*sh0, pp0y=ys0+(Math.floor(ys0)*2+1)*sh0, pp0z=h0;
+    var pp1x=xs1+(Math.floor(xs1)*2+1)*sh1, pp1y=ys1+(Math.floor(ys1)*2+1)*sh1, pp1z=h1;
+    var pp2x=xs2+(Math.floor(xs2)*2+1)*sh2, pp2y=ys2+(Math.floor(ys2)*2+1)*sh2, pp2z=h2;
+    var pp3x=xs3+(Math.floor(xs3)*2+1)*sh3, pp3y=ys3+(Math.floor(ys3)*2+1)*sh3, pp3z=h3;
+    var n0=tis(pp0x*pp0x+pp0y*pp0y+pp0z*pp0z);
+    var n1=tis(pp1x*pp1x+pp1y*pp1y+pp1z*pp1z);
+    var n2=tis(pp2x*pp2x+pp2y*pp2y+pp2z*pp2z);
+    var n3=tis(pp3x*pp3x+pp3y*pp3y+pp3z*pp3z);
+    pp0x*=n0; pp0y*=n0; pp0z*=n0;
+    pp1x*=n1; pp1y*=n1; pp1z*=n1;
+    pp2x*=n2; pp2y*=n2; pp2z*=n2;
+    pp3x*=n3; pp3y*=n3; pp3z*=n3;
+    var m0=Math.max(0.6-(x0x*x0x+x0y*x0y+x0z*x0z),0); m0*=m0;
+    var m1=Math.max(0.6-(x1x*x1x+x1y*x1y+x1z*x1z),0); m1*=m1;
+    var m2=Math.max(0.6-(x2x*x2x+x2y*x2y+x2z*x2z),0); m2*=m2;
+    var m3=Math.max(0.6-(x3x*x3x+x3y*x3y+x3z*x3z),0); m3*=m3;
+    return 42*(m0*m0*(pp0x*x0x+pp0y*x0y+pp0z*x0z)+
+               m1*m1*(pp1x*x1x+pp1y*x1y+pp1z*x1z)+
+               m2*m2*(pp2x*x2x+pp2y*x2y+pp2z*x2z)+
+               m3*m3*(pp3x*x3x+pp3y*x3y+pp3z*x3z));
+  }
+
+  // Cellular (Worley F2-F1) — identical hash to GLSL version
+  function cellular(px, py, pz, metric) {
+    var pix=Math.floor(px), piy=Math.floor(py), piz=Math.floor(pz);
+    var pfx=px-pix, pfy=py-piy, pfz=pz-piz;
+    var d1=10, d2=10;
+    for(var oz=-1;oz<=1;oz++) for(var oy=-1;oy<=1;oy++) for(var ox=-1;ox<=1;ox++){
+      var cx=pix+ox, cy=piy+oy, cz=piz+oz;
+      var rpx=frac(Math.sin(cx*127.1+cy*311.7+cz*74.7)*43758.5453);
+      var rpy=frac(Math.sin(cx*269.5+cy*183.3+cz*246.1)*43758.5453);
+      var rpz=frac(Math.sin(cx*113.5+cy*271.9+cz*124.6)*43758.5453);
+      var dx=ox+rpx-pfx, dy=oy+rpy-pfy, dz=oz+rpz-pfz;
+      var d = metric==='euclidean' ? Math.sqrt(dx*dx+dy*dy+dz*dz) :
+              metric==='manhattan' ? Math.abs(dx)+Math.abs(dy)+Math.abs(dz) :
+              Math.max(Math.abs(dx),Math.max(Math.abs(dy),Math.abs(dz)));
+      if(d<d1){d2=d1;d1=d;}else if(d<d2)d2=d;
+    }
+    return Math.max(Math.min((d2-d1)*2-1,1),-1);
+  }
+
+  function frac(x){return x-Math.floor(x);}
+
+  function fbm(px, py, pz, octaves, lacunarity, gain) {
+    var v=0,a=1,f=1,mx=0;
+    for(var i=0;i<octaves;i++){
+      v+=snoise(px*f,py*f,pz*f)*a; mx+=a; a*=gain; f*=lacunarity;
+    }
+    return v/mx;
+  }
+
+  function warp(px, py, pz, strength, octaves, lacunarity, gain) {
+    var qx=fbm(px,py,pz,octaves,lacunarity,gain);
+    var qy=fbm(px+5.2,py+1.3,pz+8.1,octaves,lacunarity,gain);
+    var qz=fbm(px+3.7,py+9.4,pz+2.8,octaves,lacunarity,gain);
+    return fbm(px+strength*qx,py+strength*qy,pz+strength*qz,octaves,lacunarity,gain);
+  }
+
+  function ridged(px, py, pz, octaves, lacunarity, gain) {
+    var v=0,a=1,f=1,mx=0;
+    for(var i=0;i<octaves;i++){
+      v+=(1-Math.abs(snoise(px*f,py*f,pz*f)))*a; mx+=a; a*=gain; f*=lacunarity;
+    }
+    return (v/mx)*2.0-1.0;  // remap [0,1] → [-1,1]
+  }
+
+  function billow(px, py, pz, octaves, lacunarity, gain) {
+    var v=0,a=1,f=1,mx=0;
+    for(var i=0;i<octaves;i++){
+      v+=Math.abs(snoise(px*f,py*f,pz*f))*a; mx+=a; a*=gain; f*=lacunarity;
+    }
+    return (v/mx)*2.0-1.0;  // remap [0,1] → [-1,1]
+  }
+
+  // Curl noise: magnitude of ∇×Ψ where Ψ is a simplex vector potential.
+  // 9 snoise calls — 3 base + 6 forward-difference offsets.
+  // Divergence-free by construction; produces closed vascular tube networks.
+  function curl(px, py, pz, curlStep, potScale) {
+    var s=potScale, e=curlStep;
+    // Base potential Ψ(p) — three spatially offset simplex fields
+    var psi_x = snoise(px*s,           py*s,           pz*s);
+    var psi_y = snoise(px*s+3.7,       py*s+1.5,       pz*s+2.8);
+    var psi_z = snoise(px*s+1.2,       py*s+4.6,       pz*s+0.9);
+    // Forward-difference partial derivatives for each curl component
+    var pzy = snoise(px*s+1.2,         (py+e)*s+4.6,   pz*s+0.9);  // Ψz(p+εŷ)
+    var pyz = snoise(px*s+3.7,         py*s+1.5,       (pz+e)*s+2.8); // Ψy(p+εẑ)
+    var pxz = snoise(px*s,             py*s,           (pz+e)*s);    // Ψx(p+εẑ)
+    var pzx = snoise((px+e)*s+1.2,     py*s+4.6,       pz*s+0.9);  // Ψz(p+εx̂)
+    var pyx = snoise((px+e)*s+3.7,     py*s+1.5,       pz*s+2.8);  // Ψy(p+εx̂)
+    var pxy = snoise(px*s,             (py+e)*s,       pz*s);       // Ψx(p+εŷ)
+    var cx = (pzy-psi_z)/e - (pyz-psi_y)/e;
+    var cy = (pxz-psi_x)/e - (pzx-psi_z)/e;
+    var cz = (pyx-psi_y)/e - (pxy-psi_x)/e;
+    return Math.sqrt(cx*cx+cy*cy+cz*cz);
+  }
+
+  function sample(params, sx, sy, sz) {
+    if(params.noiseType==='simplex') return snoise(sx,sy,sz);
+    if(params.noiseType==='cellular') return cellular(sx,sy,sz,params.distanceMetric);
+    if(params.noiseType==='fbm') return fbm(sx,sy,sz,params.octaves,params.lacunarity,params.gain);
+    if(params.noiseType==='ridged') return ridged(sx,sy,sz,params.octaves,params.lacunarity,params.gain);
+    if(params.noiseType==='billow') return billow(sx,sy,sz,params.octaves,params.lacunarity,params.gain);
+    if(params.noiseType==='curl') return curl(sx,sy,sz,params.curlStep||0.1,params.potentialScale||1.0);
+    return warp(sx,sy,sz,params.warpStrength,params.octaves,params.lacunarity,params.gain);
+  }
+
+  return {snoise:snoise,cellular:cellular,fbm:fbm,ridged:ridged,billow:billow,curl:curl,warp:warp,sample:sample};
+})();
+
+// ── GridGenerator ─────────────────────────────────────────────────────────
+function GridGenerator(){}
+GridGenerator.prototype.generate = function(params) {
+  var res=params.resolution, size=res*res*res;
+  var noiseValues=new Float32Array(size);
+  var minVal=Infinity, maxVal=-Infinity;
+  var SCALE=5.0/Math.PI;
+
+  // Generate raw noise using DeterministicNoise
+  for(var z=0;z<res;z++) for(var y=0;y<res;y++) for(var x=0;x<res;x++){
+    var idx=x+y*res+z*res*res;
+    var px=(x/res-0.5)*10, py=(y/res-0.5)*10, pz=(z/res-0.5)*10;
+    var v=DeterministicNoise.sample(params, px*params.frequency, py*params.frequency, pz*params.frequency);
+    noiseValues[idx]=v;
+    if(v<minVal)minVal=v; if(v>maxVal)maxVal=v;
+  }
+
+  // Separable box-filter smoothing (X→Y→Z) before normalization
+  var smooth=params.smoothing||0;
+  if(smooth>0.001){
+    var radius=Math.max(1,Math.round(smooth*Math.max(3,res/16)));
+    var tmp=new Float32Array(size);
+    // X pass
+    for(var z=0;z<res;z++) for(var y=0;y<res;y++){
+      for(var x=0;x<res;x++){
+        var s=0,c=0;
+        for(var k=-radius;k<=radius;k++){
+          var xx=Math.min(Math.max(x+k,0),res-1);
+          s+=noiseValues[xx+y*res+z*res*res]; c++;
+        }
+        tmp[x+y*res+z*res*res]=s/c;
+      }
+    }
+    // Y pass
+    for(var z=0;z<res;z++) for(var x=0;x<res;x++){
+      for(var y=0;y<res;y++){
+        var s=0,c=0;
+        for(var k=-radius;k<=radius;k++){
+          var yy=Math.min(Math.max(y+k,0),res-1);
+          s+=tmp[x+yy*res+z*res*res]; c++;
+        }
+        noiseValues[x+y*res+z*res*res]=s/c;
+      }
+    }
+    // Z pass
+    for(var y=0;y<res;y++) for(var x=0;x<res;x++){
+      for(var z=0;z<res;z++){
+        var s=0,c=0;
+        for(var k=-radius;k<=radius;k++){
+          var zz=Math.min(Math.max(z+k,0),res-1);
+          s+=noiseValues[x+y*res+zz*res*res]; c++;
+        }
+        tmp[x+y*res+z*res*res]=s/c;
+      }
+    }
+    noiseValues=tmp;
+    // Recompute min/max after smoothing
+    minVal=Infinity; maxVal=-Infinity;
+    for(var i=0;i<size;i++){
+      if(noiseValues[i]<minVal)minVal=noiseValues[i];
+      if(noiseValues[i]>maxVal)maxVal=noiseValues[i];
+    }
+  }
+
+  // Normalize and apply slab test: abs(norm - center) - halfwidth
+  var mid=(minVal+maxVal)*0.5;
+  var halfRange=Math.max((maxVal-minVal)*0.5,0.001);
+  var sign=params.invert?-1:1;
+  var grid=new Float32Array(size);
+  var doVoid=params.voidEnabled&&params.holeRadius>0;
+  var SCALE=5.0/Math.PI;
+  for(var i=0;i<size;i++){
+    var norm=(noiseValues[i]-mid)/halfRange;
+    var scaffold=sign*(Math.abs(norm-params.isoLevel)-params.thickness);
+    if(doVoid){
+      // Reconstruct world position from flat index
+      var iz=Math.floor(i/(res*res));
+      var iy=Math.floor((i-iz*res*res)/res);
+      var ix=i-iz*res*res-iy*res;
+      var wx=(ix/res-0.5)*10*SCALE, wy=(iy/res-0.5)*10*SCALE, wz=(iz/res-0.5)*10*SCALE;
+      var vf;
+      if(params.voidType==='organic'){
+        // Mirror GLSL: snoise with offset seed, in hole-frequency space
+        vf=DeterministicNoise.snoise(wx*params.holeFreq+17.3,wy*params.holeFreq+5.8,wz*params.holeFreq+11.2)-params.holeRadius;
+      } else {
+        // Worley F1
+        var hf=params.holeFreq;
+        var hx=wx*hf,hy=wy*hf,hz=wz*hf;
+        var pix2=Math.floor(hx),piy2=Math.floor(hy),piz2=Math.floor(hz);
+        var pfx2=hx-pix2,pfy2=hy-piy2,pfz2=hz-piz2;
+        var d1min=1e9;
+        for(var oz2=-1;oz2<=1;oz2++) for(var oy2=-1;oy2<=1;oy2++) for(var ox2=-1;ox2<=1;ox2++){
+          var cx2=pix2+ox2,cy2=piy2+oy2,cz2=piz2+oz2;
+          function h3(a,b,c){return Math.abs(Math.sin(a*127.1+b*311.7+c*74.7)*43758.5453)%1;}
+          var rpx2=h3(cx2,cy2,cz2),rpy2=h3(cx2+1,cy2,cz2),rpz2=h3(cx2,cy2+1,cz2);
+          var ddx=ox2+rpx2-pfx2,ddy=oy2+rpy2-pfy2,ddz=oz2+rpz2-pfz2;
+          var dd=Math.sqrt(ddx*ddx+ddy*ddy+ddz*ddz);
+          if(dd<d1min)d1min=dd;
+        }
+        vf=d1min-params.holeRadius;
+      }
+      grid[i]=Math.max(scaffold,-vf);
+    } else {
+      grid[i]=scaffold;
+    }
+  }
+  return grid;
+};
+
+// ── SectionViewer ─────────────────────────────────────────────────────────
+function SectionViewer(canvas){
+  this.canvas=canvas; this.ctx=canvas.getContext('2d');
+  this.grid=null; this.resolution=64; this.sliceZ=0.5;
+}
+SectionViewer.prototype.updateGrid=function(grid,res){this.grid=grid;this.resolution=res;this.render();};
+SectionViewer.prototype.setSlice=function(z){this.sliceZ=z;this.render();};
+SectionViewer.prototype.render=function(){
+  if(!this.grid)return;
+  var w=this.canvas.clientWidth,h=this.canvas.clientHeight;
+  this.canvas.width=w;this.canvas.height=h;
+  var res=this.resolution;
+  var sliceIdx=Math.floor(this.sliceZ*(res-1));
+  var imageData=this.ctx.createImageData(res,res);
+  for(var y=0;y<res;y++) for(var x=0;x<res;x++){
+    var value=this.grid[x+y*res+sliceIdx*res*res];
+    var r,g,b;
+    if(value<0){var t=Math.min(Math.abs(value)*2,1);r=Math.floor((1-t)*255);g=r;b=255;}
+    else{var t=Math.min(value*2,1);r=255;g=Math.floor((1-t)*255);b=g;}
+    var pi=(x+(res-1-y)*res)*4;
+    imageData.data[pi]=r;imageData.data[pi+1]=g;imageData.data[pi+2]=b;imageData.data[pi+3]=255;
+  }
+  var tc=document.createElement('canvas');tc.width=res;tc.height=res;
+  tc.getContext('2d').putImageData(imageData,0,0);
+  this.ctx.fillStyle='#000';this.ctx.fillRect(0,0,w,h);
+  var sz=Math.min(w,h)*0.8;
+  this.ctx.imageSmoothingEnabled=false;
+  this.ctx.drawImage(tc,(w-sz)/2,(h-sz)/2,sz,sz);
+};
+
+// ── Raymarcher ────────────────────────────────────────────────────────────
+// Architecture:
+//  • KHR_parallel_shader_compile: non-blocking compilation — no UI freeze
+//  • Program cache: all permutations pre-warmed on load, switching is instant
+//  • Inline noise evaluation in fragment shader (reliable on all drivers)
+//  • WebGL1 context (universal compatibility)
+function Raymarcher(canvas){
+  this.canvas=canvas;
+  var vp=canvas.parentElement;
+  canvas.width =Math.max(vp?vp.clientWidth :window.innerWidth||300,1);
+  canvas.height=Math.max(vp?vp.clientHeight:Math.round(window.innerHeight*0.5)||300,1);
+  this.gl=canvas.getContext('webgl')||canvas.getContext('experimental-webgl');
+  if(!this.gl){document.getElementById('status').textContent='WebGL not supported';return;}
+  var gl=this.gl;
+  this._khr=gl.getExtension('KHR_parallel_shader_compile')||null;
+  this._pendingProg=null;
+  this._pendingParams=null;
+  this._compiling=false;
+  this.prog=null; this.quadBuf=null;
+  this.uRes=null;this.uRot=null;this.uZoom=null;this.uFreq=null;
+  this.uThick=null;this.uIso=null;this.uNoiseMin=null;this.uNoiseMax=null;
+  this.uSigma=null;this.uInvertSign=null;
+  this.uCurlStep=null;this.uPotScale=null;
+  this.uGain=null;this.uLacunarity=null;this.uWarpStrength=null;
+  this.uHoleFreq=null;this.uHoleRadius=null;
+  this.camZoom=16;this.autoRot=false;this.running=false;this._loopRunning=false;
+  this._dirty=true;
+  this.currentParams=null;
+  this.noiseMin=-1;this.noiseMax=1;
+  this.rotMat=this._mat3Mul(this._rotAA(0,1,0,0.7),this._rotAA(1,0,0,0.5));
+  this.quadBuf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,this.quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+  this._setupInteraction();
+}
+
+Raymarcher.prototype._rotAA=function(ax,ay,az,angle){
+  var c=Math.cos(angle),s=Math.sin(angle),t2=1-c;
+  var l=Math.sqrt(ax*ax+ay*ay+az*az)||1;ax/=l;ay/=l;az/=l;
+  return[t2*ax*ax+c,t2*ax*ay+s*az,t2*ax*az-s*ay,
+         t2*ax*ay-s*az,t2*ay*ay+c,t2*ay*az+s*ax,
+         t2*ax*az+s*ay,t2*ay*az-s*ax,t2*az*az+c];
+};
+Raymarcher.prototype._mat3Mul=function(A,B){
+  var r=new Array(9);
+  for(var c=0;c<3;c++) for(var row=0;row<3;row++)
+    r[c*3+row]=A[0*3+row]*B[c*3+0]+A[1*3+row]*B[c*3+1]+A[2*3+row]*B[c*3+2];
+  return r;
+};
+Raymarcher.prototype._orthonorm=function(m){
+  function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+  function scl(a,s){return[a[0]*s,a[1]*s,a[2]*s];}
+  function sub(a,b){return[a[0]-b[0],a[1]-b[1],a[2]-b[2]];}
+  function nrm(a){var l=Math.sqrt(dot(a,a))||1;return[a[0]/l,a[1]/l,a[2]/l];}
+  var x=[m[0],m[1],m[2]],y=[m[3],m[4],m[5]],z=[m[6],m[7],m[8]];
+  x=nrm(x);y=nrm(sub(y,scl(x,dot(y,x))));
+  z=nrm(sub(sub(z,scl(x,dot(z,x))),scl(y,dot(z,y))));
+  return[x[0],x[1],x[2],y[0],y[1],y[2],z[0],z[1],z[2]];
+};
+Raymarcher.prototype._applyDelta=function(dx,dy){
+  if(Math.abs(dx)>0.001){this.rotMat=this._mat3Mul(this._rotAA(0,1,0,dx*0.007),this.rotMat);this._dirty=true;}
+  if(Math.abs(dy)>0.001){
+    var rx=this.rotMat[0],ry=this.rotMat[1],rz=this.rotMat[2];
+    this.rotMat=this._mat3Mul(this._rotAA(rx,ry,rz,-dy*0.007),this.rotMat);this._dirty=true;
+  }
+};
+Raymarcher.prototype._setupInteraction=function(){
+  var self=this,drag=false,lx=0,ly=0;
+  this.canvas.onmousedown=function(e){drag=true;lx=e.clientX;ly=e.clientY;self.autoRot=false;};
+  window.addEventListener('mouseup',function(){drag=false;});
+  window.addEventListener('mousemove',function(e){
+    if(drag){self._applyDelta(e.clientX-lx,e.clientY-ly);lx=e.clientX;ly=e.clientY;}
+  });
+  this.canvas.addEventListener('touchstart',function(e){
+    drag=true;lx=e.touches[0].clientX;ly=e.touches[0].clientY;self.autoRot=false;e.preventDefault();
+  },{passive:false});
+  window.addEventListener('touchend',function(){drag=false;});
+  window.addEventListener('touchmove',function(e){
+    if(drag){self._applyDelta(e.touches[0].clientX-lx,e.touches[0].clientY-ly);
+      lx=e.touches[0].clientX;ly=e.touches[0].clientY;e.preventDefault();}
+  },{passive:false});
+  this.canvas.addEventListener('wheel',function(e){
+    self.camZoom=Math.max(6,Math.min(40,self.camZoom+e.deltaY*0.02));
+    self._dirty=true;e.preventDefault();
+  },{passive:false});
+};
+
+Raymarcher.prototype._mkShader=function(type,src){
+  var gl=this.gl;
+  var s=gl.createShader(type);
+  if(!s)return null;
+  gl.shaderSource(s,src);gl.compileShader(s);
+  return s;
+};
+
+Raymarcher.prototype._runPrepass=function(params){
+  var N=16,SCALE=5.0/Math.PI;
+  var mn=Infinity,mx=-Infinity;
+  for(var zi=0;zi<N;zi++) for(var yi=0;yi<N;yi++) for(var xi=0;xi<N;xi++){
+    var px=((xi/(N-1))*2-1)*Math.PI;
+    var py=((yi/(N-1))*2-1)*Math.PI;
+    var pz=((zi/(N-1))*2-1)*Math.PI;
+    var v=DeterministicNoise.sample(params,px*SCALE*params.frequency,py*SCALE*params.frequency,pz*SCALE*params.frequency);
+    if(v<mn)mn=v; if(v>mx)mx=v;
+  }
+  var range=mx-mn;
+  this.noiseMin=mn-range*0.05;
+  this.noiseMax=mx+range*0.05;
+};
+
+Raymarcher.prototype._buildFrag=function(params){
+  var type=params.noiseType||'simplex', oct=params.octaves||4;
+  var metric=params.distanceMetric||'euclidean';
+  var SCALE=(5.0/Math.PI).toFixed(6);
+  var isCurl=(type==='curl');
+  var needsFbm=(type==='fbm'||type==='warp'||type==='ridged'||type==='billow');
+  var voidEnabled=params.voidEnabled;
+  var voidType=params.voidType||'spherical';
+  var qualIter=params.quality==='high'?'512':params.quality==='medium'?'256':'128';
+  var octLit=String(oct);
+
+  var simplexCode=[
+    'vec3 smod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}',
+    'vec4 smod289v(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}',
+    'vec4 sperm(vec4 x){return smod289v(((x*34.0)+1.0)*x);}',
+    'vec4 stis(vec4 r){return 1.79284291400159-0.85373472095314*r;}',
+    'float snoise(vec3 v){',
+    ' const vec2 C=vec2(0.166666667,0.333333333);const vec4 D=vec4(0.0,0.5,1.0,2.0);',
+    ' vec3 i=floor(v+dot(v,C.yyy));vec3 x0=v-i+dot(i,C.xxx);',
+    ' vec3 g=step(x0.yzx,x0.xyz);vec3 l=1.0-g;',
+    ' vec3 i1=min(g.xyz,l.zxy);vec3 i2=max(g.xyz,l.zxy);',
+    ' vec3 x1=x0-i1+C.xxx;vec3 x2=x0-i2+C.yyy;vec3 x3=x0-D.yyy;',
+    ' i=smod289(i);',
+    ' vec4 p=sperm(sperm(sperm(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));',
+    ' float n_=0.142857142857;vec3 ns=n_*D.wyz-D.xzx;',
+    ' vec4 j=p-49.0*floor(p*ns.z*ns.z);',
+    ' vec4 x_=floor(j*ns.z);vec4 y_=floor(j-7.0*x_);',
+    ' vec4 xs=x_*ns.x+ns.yyyy;vec4 ys=y_*ns.x+ns.yyyy;',
+    ' vec4 h=1.0-abs(xs)-abs(ys);',
+    ' vec4 b0=vec4(xs.xy,ys.xy);vec4 b1=vec4(xs.zw,ys.zw);',
+    ' vec4 s0=floor(b0)*2.0+1.0;vec4 s1=floor(b1)*2.0+1.0;',
+    ' vec4 sh=-step(h,vec4(0.0));',
+    ' vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy;vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;',
+    ' vec3 p0=vec3(a0.xy,h.x);vec3 p1=vec3(a0.zw,h.y);',
+    ' vec3 p2=vec3(a1.xy,h.z);vec3 p3=vec3(a1.zw,h.w);',
+    ' vec4 norm=stis(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));',
+    ' p0*=norm.x;p1*=norm.y;p2*=norm.z;p3*=norm.w;',
+    ' vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0);m=m*m;',
+    ' return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));',
+    '}'
+  ].join('\n');
+
+  var distExpr=metric==='euclidean'?'length(diff)':
+               metric==='manhattan'?'abs(diff.x)+abs(diff.y)+abs(diff.z)':
+               'max(abs(diff.x),max(abs(diff.y),abs(diff.z)))';
+  var cellularCode=(type==='cellular')?[
+    'float cellular(vec3 p){',
+    ' vec3 pi=floor(p);vec3 pf=fract(p);float d1=10.0,d2=10.0;',
+    ' for(int oz=-1;oz<=1;oz++){for(int oy=-1;oy<=1;oy++){for(int ox=-1;ox<=1;ox++){',
+    '  vec3 cell=pi+vec3(float(ox),float(oy),float(oz));',
+    '  vec3 rp=fract(sin(vec3(dot(cell,vec3(127.1,311.7,74.7)),dot(cell,vec3(269.5,183.3,246.1)),dot(cell,vec3(113.5,271.9,124.6))))*43758.5453);',
+    '  vec3 diff=vec3(float(ox),float(oy),float(oz))+rp-pf;',
+    '  float d='+distExpr+';',
+    '  if(d<d1){d2=d1;d1=d;}else if(d<d2)d2=d;',
+    ' }}}',
+    ' return clamp((d2-d1)*2.0-1.0,-1.0,1.0);',
+    '}'
+  ].join('\n'):'';
+
+  var fbmCode=needsFbm?[
+    'float fbm(vec3 p){',
+    ' float v=0.0,a=1.0,f=1.0,mx=0.0;',
+    ' for(int i=0;i<'+octLit+';i++){v+=snoise(p*f)*a;mx+=a;a*=uGain;f*=uLacunarity;}',
+    ' return v/mx;',
+    '}'
+  ].join('\n'):'';
+
+  var ridgedCode=(type==='ridged')?[
+    'float ridged(vec3 p){',
+    ' float v=0.0,a=1.0,f=1.0,mx=0.0;',
+    ' for(int i=0;i<'+octLit+';i++){v+=(1.0-abs(snoise(p*f)))*a;mx+=a;a*=uGain;f*=uLacunarity;}',
+    ' return (v/mx)*2.0-1.0;',
+    '}'
+  ].join('\n'):'';
+
+  var billowCode=(type==='billow')?[
+    'float billow(vec3 p){',
+    ' float v=0.0,a=1.0,f=1.0,mx=0.0;',
+    ' for(int i=0;i<'+octLit+';i++){v+=abs(snoise(p*f))*a;mx+=a;a*=uGain;f*=uLacunarity;}',
+    ' return (v/mx)*2.0-1.0;',
+    '}'
+  ].join('\n'):'';
+
+  var curlCode=isCurl?[
+    'float curlField(vec3 p){',
+    ' float s=potScale;float e=curlStep;',
+    ' float bx=snoise(p*s);',
+    ' float by=snoise(p*s+vec3(3.7,1.5,2.8));',
+    ' float bz=snoise(p*s+vec3(1.2,4.6,0.9));',
+    ' float ox=snoise((p+vec3(e,0.0,0.0))*s);',
+    ' float oy=snoise((p+vec3(0.0,e,0.0))*s+vec3(3.7,1.5,2.8));',
+    ' float oz=snoise((p+vec3(0.0,0.0,e))*s+vec3(1.2,4.6,0.9));',
+    ' float cx=(oz-bz)/e-(oy-by)/e;',
+    ' float cy=(ox-bx)/e-(oz-bz)/e;',
+    ' float cz=(oy-by)/e-(ox-bx)/e;',
+    ' return length(vec3(cx,cy,cz));',
+    '}'
+  ].join('\n'):'';
+
+  var noiseFieldCode;
+  if(type==='simplex')  noiseFieldCode='float noiseField(vec3 p){return snoise(p);}';
+  else if(type==='cellular') noiseFieldCode='float noiseField(vec3 p){return cellular(p);}';
+  else if(type==='fbm')  noiseFieldCode='float noiseField(vec3 p){return fbm(p);}';
+  else if(type==='ridged') noiseFieldCode='float noiseField(vec3 p){return ridged(p);}';
+  else if(type==='billow') noiseFieldCode='float noiseField(vec3 p){return billow(p);}';
+  else if(type==='curl') noiseFieldCode='float noiseField(vec3 p){return curlField(p);}';
+  else noiseFieldCode='float noiseField(vec3 p){float qx=fbm(p),qy=fbm(p+vec3(5.2,1.3,8.1)),qz=fbm(p+vec3(3.7,9.4,2.8));return fbm(p+uWarpStrength*vec3(qx,qy,qz));}';
+
+  var voidUniforms=voidEnabled?'uniform float uHoleFreq;\nuniform float uHoleRadius;':'';
+  var voidCode=voidEnabled?(
+    voidType==='spherical'?[
+      'float voidField(vec3 p){',
+      ' vec3 pi=floor(p*uHoleFreq);vec3 pf=fract(p*uHoleFreq);float d1=10.0;',
+      ' for(int oz=-1;oz<=1;oz++){for(int oy=-1;oy<=1;oy++){for(int ox=-1;ox<=1;ox++){',
+      '  vec3 cell=pi+vec3(float(ox),float(oy),float(oz));',
+      '  vec3 rp=fract(sin(vec3(dot(cell,vec3(127.1,311.7,74.7)),dot(cell,vec3(269.5,183.3,246.1)),dot(cell,vec3(113.5,271.9,124.6))))*43758.5453);',
+      '  float d=length(vec3(float(ox),float(oy),float(oz))+rp-pf);if(d<d1)d1=d;',
+      ' }}}return d1-uHoleRadius;}'
+    ].join('\n')
+    :'float voidField(vec3 p){return snoise(p*uHoleFreq+vec3(17.3,5.8,11.2))-uHoleRadius;}'
+  ):'';
+
+  return [
+    'precision highp float;',
+    'uniform vec2 res;uniform mat3 rot;uniform float zoom;',
+    'uniform float freq;uniform float thickness;uniform float isoLevel;',
+    'uniform float noiseMin;uniform float noiseMax;',
+    'uniform float sigma;uniform float invertSign;',
+    'uniform float uGain;uniform float uLacunarity;uniform float uWarpStrength;',
+    isCurl?'uniform float curlStep;uniform float potScale;':'',
+    voidUniforms,
+    simplexCode,
+    cellularCode, fbmCode, ridgedCode, billowCode, curlCode,
+    noiseFieldCode,
+    voidEnabled?voidCode:'',
+    'float sampleNoise(vec3 p,float S){',
+    ' if(sigma<0.001)return noiseField(p*S);',
+    ' float e=sigma*0.5/max(S,0.01);float w=0.60653;',
+    ' float total=noiseField(p*S);',
+    ' total+=w*(noiseField((p+vec3(e,0,0))*S)+noiseField((p-vec3(e,0,0))*S));',
+    ' total+=w*(noiseField((p+vec3(0,e,0))*S)+noiseField((p-vec3(0,e,0))*S));',
+    ' total+=w*(noiseField((p+vec3(0,0,e))*S)+noiseField((p-vec3(0,0,e))*S));',
+    ' return total/(1.0+6.0*w);}',
+    'float implicit(vec3 p,float S){',
+    ' float raw=sampleNoise(p,S);',
+    ' float mid=(noiseMax+noiseMin)*0.5;',
+    ' float halfR=max((noiseMax-noiseMin)*0.5,0.001);',
+    ' float norm=(raw-mid)/halfR;',
+    ' float scaffold=invertSign*(abs(norm-isoLevel)-thickness);',
+    voidEnabled?' return max(scaffold,-voidField(p));':' return scaffold;',
+    '}',
+    'vec3 boxNormal(vec3 pos,float H){vec3 ap=abs(pos)/H;if(ap.x>ap.y&&ap.x>ap.z)return vec3(sign(pos.x),0.0,0.0);if(ap.y>ap.z)return vec3(0.0,sign(pos.y),0.0);return vec3(0.0,0.0,sign(pos.z));}',
+    'vec3 nrmNoise(vec3 p,float e,float S){float ex=implicit(p+vec3(e,0,0),S)-implicit(p-vec3(e,0,0),S);float ey=implicit(p+vec3(0,e,0),S)-implicit(p-vec3(0,e,0),S);float ez=implicit(p+vec3(0,0,e),S)-implicit(p-vec3(0,0,e),S);return normalize(vec3(ex,ey,ez));}',
+    'vec3 palette(float t){vec3 a=vec3(0.55,0.57,0.42),b=vec3(0.43,0.42,0.30),c=vec3(1.0,1.0,1.0),d=vec3(0.02,0.0,0.05);return clamp(a+b*cos(6.28318*(c*t+d)),0.0,1.0);}',
+    'void main(){',
+    ' vec2 uv=(gl_FragCoord.xy-res*0.5)/min(res.x,res.y);',
+    ' vec3 ro=rot*vec3(0.0,0.0,zoom);vec3 rd=normalize(rot*vec3(uv.x,uv.y,-1.6));',
+    ' float H=3.141593;',
+    ' float r=clamp(length(uv)*1.1,0.0,1.0);',
+    ' vec3 bgCol=mix(vec3(0.07,0.07,0.07),vec3(0.03,0.03,0.03),r*r);',
+    ' float S='+SCALE+'*freq;',
+    ' float lipschitz=max(S*2.0,0.1);',
+    ' float halfR=max((noiseMax-noiseMin)*0.5,0.001);',
+    ' float featureSize=thickness*halfR/lipschitz;',
+    ' float thresh=featureSize*0.008;',
+    // maxStep: allow full SDF steps in empty space (up to 0.5),
+    // but never more than featureSize*0.5 so we don't step over thin walls.
+    // The SDF itself handles safety — d/lipschitz*0.85 is small near surfaces.
+    ' float maxStep=min(featureSize*0.5,0.5);',
+    ' float nrmE=max(featureSize*0.06,0.004);',
+    ' vec3 iv=vec3(1.0)/rd;',
+    ' vec3 tb=(-vec3(H,H,H)-ro)*iv,tt=(vec3(H,H,H)-ro)*iv;',
+    ' vec3 tmi=min(tb,tt),tma=max(tb,tt);',
+    ' float tEn=max(max(tmi.x,tmi.y),tmi.z);float tEx=min(min(tma.x,tma.y),tma.z);',
+    ' if(tEn>tEx||tEx<0.0){gl_FragColor=vec4(bgCol,1.0);return;}',
+    ' float t=max(tEn,0.001);bool hit=false;bool nearCap=false;',
+    ' if(implicit(ro+rd*t,S)<0.0){nearCap=true;}',
+    ' if(!nearCap){',
+    '  for(int i=0;i<'+qualIter+';i++){',
+    '   if(t>tEx)break;vec3 p=ro+rd*t;float d=implicit(p,S);',
+    '   if(d<thresh){hit=true;break;}',
+    '   t+=clamp(d/lipschitz*0.85,thresh*0.5,maxStep);}',
+    ' }',
+    ' vec3 pos;vec3 n;',
+    ' if(nearCap){pos=ro+rd*tEn;n=boxNormal(pos,H);if(dot(n,-rd)<0.0)n=-n;t=tEn;}',
+    ' else if(hit){pos=ro+rd*t;n=nrmNoise(pos,nrmE,S);if(dot(n,-rd)<0.0)n=-n;}',
+    ' else{if(implicit(ro+rd*tEx,S)<0.0){pos=ro+rd*tEx;n=boxNormal(pos,H);if(dot(n,-rd)<0.0)n=-n;t=tEx;}else{gl_FragColor=vec4(bgCol,1.0);return;}}',
+    ' float dy=dot(n,vec3(0.0,1.0,0.0)),dz=dot(n,vec3(0.0,0.0,1.0));',
+    ' float hue=dy*dy*0.33+dz*dz*0.67;',
+    ' vec3 iridBase=palette(hue);vec3 iridShift=palette(hue+0.5);',
+    ' vec3 l1=normalize(vec3(1.0,1.8,2.0)),l2=normalize(vec3(-0.8,-0.3,0.6));',
+    ' float l3fill=max(dot(n,normalize(vec3(-0.5,-1.0,-1.5))),0.0)*0.3;',
+    ' float diff=0.35+max(dot(n,l1),0.0)*0.7+max(dot(n,l2),0.0)*0.25+l3fill;',
+    ' float spec1=pow(max(dot(reflect(-l1,n),-rd),0.0),120.0)*0.7;',
+    ' float spec2=pow(max(dot(reflect(-l1,n),-rd),0.0),20.0)*0.2;',
+    ' float rim=pow(1.0-max(dot(n,-rd),0.0),2.5)*0.8;',
+    ' vec3 green=vec3(0.784,0.961,0.259);',
+    ' vec3 col=iridBase*diff+vec3(1.0,1.0,1.0)*spec1+green*spec2*0.6+green*rim*0.45;',
+    ' col=mix(bgCol,col,exp(-t*0.010));',
+    ' gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}',
+  ].join('\n');
+};
+
+// Submit a shader for async compilation.
+Raymarcher.prototype._submitShader=function(params){
+  var gl=this.gl;
+  var vs='attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}';
+  var fs=this._buildFrag(params);
+  var vs_=this._mkShader(gl.VERTEX_SHADER,vs);
+  var fs_=this._mkShader(gl.FRAGMENT_SHADER,fs);
+  if(!vs_||!fs_){return;}
+  var prg=gl.createProgram();
+  gl.attachShader(prg,vs_);gl.attachShader(prg,fs_);
+  gl.linkProgram(prg);
+  gl.deleteShader(vs_);gl.deleteShader(fs_);
+  // Store as pending — _startLoop polls each frame and activates when ready
+  if(this._pendingProg)gl.deleteProgram(this._pendingProg);
+  this._pendingProg=prg;
+  this._pendingParams=params;
+  this._compiling=true;
+  document.getElementById('status').textContent='Compiling...';
+};
+
+// Activate a ready program: set up vertex attrib + cache uniform locations
+Raymarcher.prototype._activateProgram=function(prg){
+  var gl=this.gl;
+  if(this.prog&&this.prog!==prg)gl.deleteProgram(this.prog);
+  this.prog=prg;
+  gl.useProgram(prg);
+  gl.bindBuffer(gl.ARRAY_BUFFER,this.quadBuf);
+  var loc=gl.getAttribLocation(prg,'p');
+  gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+  this.uRes=gl.getUniformLocation(prg,'res');
+  this.uRot=gl.getUniformLocation(prg,'rot');
+  this.uZoom=gl.getUniformLocation(prg,'zoom');
+  this.uFreq=gl.getUniformLocation(prg,'freq');
+  this.uThick=gl.getUniformLocation(prg,'thickness');
+  this.uIso=gl.getUniformLocation(prg,'isoLevel');
+  this.uNoiseMin=gl.getUniformLocation(prg,'noiseMin');
+  this.uNoiseMax=gl.getUniformLocation(prg,'noiseMax');
+  this.uSigma=gl.getUniformLocation(prg,'sigma');
+  this.uInvertSign=gl.getUniformLocation(prg,'invertSign');
+  this.uGain=gl.getUniformLocation(prg,'uGain');
+  this.uLacunarity=gl.getUniformLocation(prg,'uLacunarity');
+  this.uWarpStrength=gl.getUniformLocation(prg,'uWarpStrength');
+  this.uCurlStep=gl.getUniformLocation(prg,'curlStep');
+  this.uPotScale=gl.getUniformLocation(prg,'potScale');
+  this.uHoleFreq=gl.getUniformLocation(prg,'uHoleFreq');
+  this.uHoleRadius=gl.getUniformLocation(prg,'uHoleRadius');
+};
+
+Raymarcher.prototype.setParams=function(params){
+  if(!this.gl)return;
+  var prev=this.currentParams;
+  var needPrepass=!prev||!this.prog||
+    params.noiseType!==prev.noiseType||
+    params.frequency!==prev.frequency||
+    params.octaves!==prev.octaves||
+    params.lacunarity!==prev.lacunarity||
+    params.gain!==prev.gain||
+    params.warpStrength!==prev.warpStrength||
+    params.distanceMetric!==prev.distanceMetric;
+  var needRebuild=!prev||!this.prog||
+    params.noiseType!==prev.noiseType||
+    params.octaves!==prev.octaves||
+    params.distanceMetric!==prev.distanceMetric||
+    params.voidEnabled!==prev.voidEnabled||
+    params.voidType!==prev.voidType||
+    params.quality!==prev.quality;
+  this.currentParams=params;
+  if(needPrepass)this._runPrepass(params);
+  if(needRebuild)this._submitShader(params,'',true);
+  this._dirty=true;
+  if(!this._loopRunning)this._startLoop();
+  this.running=true;
+};
+
+Raymarcher.prototype.render=function(){
+  var gl=this.gl;
+  if(!gl)return;
+  // Poll for pending async compilation
+  if(this._compiling&&this._pendingProg){
+    var ready=true;
+    if(this._khr)ready=gl.getProgramParameter(this._pendingProg,this._khr.COMPLETION_STATUS_KHR);
+    if(ready){
+      if(gl.getProgramParameter(this._pendingProg,gl.LINK_STATUS)){
+        this._activateProgram(this._pendingProg);
+        document.getElementById('status').textContent='Ready';
+      } else {
+        console.error('Shader link failed:',gl.getProgramInfoLog(this._pendingProg));
+        gl.deleteProgram(this._pendingProg);
+        document.getElementById('status').textContent='Shader error — see console';
+      }
+      this._pendingProg=null;this._compiling=false;this._dirty=true;
+    }
+  }
+  if(!this.prog)return;
+  var cssW=this.canvas.clientWidth,cssH=this.canvas.clientHeight;
+  if(cssW===0||cssH===0)return;
+  // Internal render resolution cap — the single most effective GPU load reduction.
+  // CSS width:100%;height:100% upscales the canvas automatically.
+  // At 420px internal vs 900px CSS: 4.6× fewer fragment invocations.
+  // Scaffold geometry reads clearly at this resolution; raymarched SDFs
+  // are inherently soft so there is no aliasing penalty.
+  var MAX_DIM=420;
+  var scale=Math.min(1.0, MAX_DIM/Math.max(cssW,cssH));
+  var w=Math.round(cssW*scale),h=Math.round(cssH*scale);
+  if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}
+  gl.viewport(0,0,w,h);
+  gl.useProgram(this.prog);
+  gl.uniform2f(this.uRes,w,h);
+  gl.uniformMatrix3fv(this.uRot,false,new Float32Array(this.rotMat));
+  gl.uniform1f(this.uZoom,this.camZoom);
+  if(this.currentParams){
+    var p=this.currentParams;
+    gl.uniform1f(this.uFreq,p.frequency);
+    gl.uniform1f(this.uThick,p.thickness);
+    gl.uniform1f(this.uIso,p.isoLevel||0);
+    gl.uniform1f(this.uNoiseMin,this.noiseMin);
+    gl.uniform1f(this.uNoiseMax,this.noiseMax);
+    gl.uniform1f(this.uSigma,p.smoothing||0);
+    gl.uniform1f(this.uInvertSign,p.invert?-1.0:1.0);
+    if(this.uGain)gl.uniform1f(this.uGain,p.gain||0.5);
+    if(this.uLacunarity)gl.uniform1f(this.uLacunarity,p.lacunarity||2.0);
+    if(this.uWarpStrength)gl.uniform1f(this.uWarpStrength,p.warpStrength||1.0);
+    if(this.uCurlStep)gl.uniform1f(this.uCurlStep,p.curlStep||0.1);
+    if(this.uPotScale)gl.uniform1f(this.uPotScale,p.potentialScale||1.0);
+    if(this.uHoleFreq)gl.uniform1f(this.uHoleFreq,p.holeFreq||1.0);
+    if(this.uHoleRadius)gl.uniform1f(this.uHoleRadius,p.holeRadius||0.3);
+  }
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  this._dirty=false;
+};
+
+Raymarcher.prototype._startLoop=function(){
+  var self=this;self._loopRunning=true;var lastTs=0;
+  function loop(ts){
+    var dt=Math.min((ts-lastTs)/1000,0.05);lastTs=ts;
+    if(self.running){
+      if(self.autoRot){self._applyDelta(dt*30,0);self._dirty=true;}
+      if(self._dirty||self._compiling){
+        self.rotMat=self._orthonorm(self.rotMat);
+        self.render();
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+};
+
+window.addEventListener('beforeunload',function(){
+  if(typeof raymarcher!=='undefined'&&raymarcher.gl){
+    if(raymarcher._pendingProg)raymarcher.gl.deleteProgram(raymarcher._pendingProg);
+    if(raymarcher.prog)raymarcher.gl.deleteProgram(raymarcher.prog);
+  }
+});
+
+// ── Orchestration ─────────────────────────────────────────────────────────
+var gridGen=new GridGenerator();
+var raymarcher=new Raymarcher(document.getElementById('glCanvas'));
+var sectionViewer=new SectionViewer(document.getElementById('sectionCanvas'));
+
+function getParams(){
+  return{
+    noiseType:     document.getElementById('noiseType').value,
+    frequency:     parseFloat(document.getElementById('frequency').value),
+    isoLevel:      parseFloat(document.getElementById('isoLevel').value),
+    thickness:     parseFloat(document.getElementById('thickness').value),
+    invert:        invertSolid,
+    smoothing:     parseFloat(document.getElementById('smoothing').value),
+    octaves:       parseInt(document.getElementById('octaves').value),
+    lacunarity:    parseFloat(document.getElementById('lacunarity').value),
+    gain:          parseFloat(document.getElementById('gain').value),
+    warpStrength:  parseFloat(document.getElementById('warpStrength').value),
+    distanceMetric:document.getElementById('distanceMetric').value,
+    curlStep:      parseFloat(document.getElementById('curlStep').value),
+    potentialScale:parseFloat(document.getElementById('potentialScale').value),
+    voidEnabled:   voidEnabled,
+    voidType:      voidType,
+    holeFreq:      parseFloat(document.getElementById('holeFreq').value),
+    holeRadius:    parseFloat(document.getElementById('holeRadius').value),
+    resolution:    currentResolution
+  };
+}
+
+function updateControlVisibility(){
+  var type=document.getElementById('noiseType').value;
+  var isFBM=type==='fbm',isWarp=type==='warp',isCell=type==='cellular';
+  var isRidged=type==='ridged',isBillow=type==='billow',isCurl=type==='curl';
+  var needsOctaves=isFBM||isWarp||isRidged||isBillow;
+  document.getElementById('octavesControl').style.display=needsOctaves?'block':'none';
+  document.getElementById('lacunarityControl').style.display=needsOctaves?'block':'none';
+  document.getElementById('gainControl').style.display=needsOctaves?'block':'none';
+  document.getElementById('warpControl').style.display=isWarp?'block':'none';
+  document.getElementById('distanceMetricControl').style.display=isCell?'block':'none';
+  document.getElementById('curlStepControl').style.display=isCurl?'block':'none';
+  document.getElementById('potScaleControl').style.display=isCurl?'block':'none';
+}
+
+function regenerate(){
+  clearTimeout(debounceTimer);
+  debounceTimer=setTimeout(function(){
+    var params=getParams();
+    if(currentViewMode==='sheet'){
+      raymarcher.setParams(params);
+      document.getElementById('status').textContent='Ready';
+    } else {
+      document.getElementById('status').textContent='Generating...';
+      setTimeout(function(){
+        var t0=performance.now();
+        currentGrid=gridGen.generate(params);
+        sectionViewer.updateGrid(currentGrid,params.resolution);
+        document.getElementById('status').textContent='Generated in '+(performance.now()-t0).toFixed(0)+'ms';
+      },50);
+    }
+  },300);
+}
+
+function onNoiseTypeChange(){updateControlVisibility();regenerate();}
+
+function onParamChange(input,displayId){
+  var val=parseFloat(input.value);
+  document.getElementById(displayId).textContent=input.id==='octaves'?val.toFixed(0):val.toFixed(2);
+  regenerate();
+}
+
+function onViewModeChange(mode){
+  currentViewMode = mode;
+  var isSection = (mode === 'section');
+  document.getElementById('btnViewSheet').classList.toggle('active', !isSection);
+  document.getElementById('btnViewSection').classList.toggle('active', isSection);
+  document.getElementById('sliceControl').style.display=isSection?'flex':'none';
+  document.getElementById('glCanvas').style.display=isSection?'none':'block';
+  document.getElementById('sectionCanvas').style.display=isSection?'block':'none';
+  if(isSection){
+    raymarcher.running=false;
+    if(currentGrid){sectionViewer.updateGrid(currentGrid,currentResolution);}
+    else{regenerate();}
+  } else {
+    raymarcher.setParams(getParams()); raymarcher.running=true;
+  }
+}
+
+function onSliceChange(input){
+  var value=parseFloat(input.value);
+  document.getElementById('sliceValue').textContent=value.toFixed(2);
+  sectionViewer.setSlice(value);
+}
+
+window.onresize=function(){
+  if(currentViewMode==='sheet')raymarcher.render();else sectionViewer.render();
+};
+
+// ── Stiffness ellipsoid ───────────────────────────────────────────────────
+// Standalone math helpers (mirrors Raymarcher prototype methods as globals)
+function smat3Mul(A,B){
+  var r=new Array(9);
+  for(var c=0;c<3;c++) for(var row=0;row<3;row++)
+    r[c*3+row]=A[0*3+row]*B[c*3+0]+A[1*3+row]*B[c*3+1]+A[2*3+row]*B[c*3+2];
+  return r;
+}
+function sRotAxisAngle(ax,ay,az,angle){
+  var c=Math.cos(angle),s=Math.sin(angle),t2=1-c;
+  var l=Math.sqrt(ax*ax+ay*ay+az*az)||1;ax/=l;ay/=l;az/=l;
+  return[t2*ax*ax+c,t2*ax*ay+s*az,t2*ax*az-s*ay,
+         t2*ax*ay-s*az,t2*ay*ay+c,t2*ay*az+s*ax,
+         t2*ax*az+s*ay,t2*ay*az-s*ax,t2*az*az+c];
+}
+function sOrthonorm(m){
+  function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+  function scl(a,s){return[a[0]*s,a[1]*s,a[2]*s];}
+  function sub(a,b){return[a[0]-b[0],a[1]-b[1],a[2]-b[2]];}
+  function nrm(a){var l=Math.sqrt(dot(a,a))||1;return[a[0]/l,a[1]/l,a[2]/l];}
+  var x=[m[0],m[1],m[2]],y=[m[3],m[4],m[5]],z=[m[6],m[7],m[8]];
+  x=nrm(x);y=nrm(sub(y,scl(x,dot(y,x))));
+  z=nrm(sub(sub(z,scl(x,dot(z,x))),scl(y,dot(z,y))));
+  return[x[0],x[1],x[2],y[0],y[1],y[2],z[0],z[1],z[2]];
+}
+
+var sgl=null,sprog=null,squadBuf=null,suRes,suRot,suZoom;
+var sRotMat=[1,0,0,0,1,0,0,0,1];
+var sInitialized=false,sZoom=2.6;
+var SVERT='attribute vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}';
+
+function buildStiffFrag(Ex,Ey,Ez,Gxy,nu){
+  var E=(Ex+Ey+Ez)/3;
+  var S11=1/E,S12=-nu/E,S44=1/Gxy;
+  var d=(S11-S12)*(S11+2*S12);
+  var C11=(S11+S12)/d,C12=-S12/d,C44=1/S44;
+  var A=2*C44/(C11-C12);
+  var Gamma=2*S11-2*S12-S44;
+  var E100=1/S11;
+  var E111=Math.abs(S11-Gamma/3)>1e-9?1/(S11-Gamma/3):E100;
+  var Emax=Math.max(E100,E111,Ex,Ey,Ez)*1.08;
+  // Update Zener A display
+  var zv=document.getElementById('zener-val');
+  var zm=document.getElementById('zener-marker');
+  var zl=document.getElementById('zener-label');
+  if(zv){zv.textContent=A.toFixed(3);}
+  if(zm){var Aclamp=Math.min(Math.max(A,0.3),2.5);zm.style.left=((Aclamp-0.3)/(2.5-0.3)*100).toFixed(1)+'%';}
+  var Acol=A<0.8?'#e879f9':A<1.2?'#888':A<2.0?'#22d3ee':'#aaff00';
+  var Albl=A<0.7?'strongly axial':A<0.9?'axial dominant':A<1.1?'near-isotropic':A<1.5?'diagonal dominant':'strongly diagonal';
+  if(zv)zv.style.color=Acol;
+  if(zl){zl.textContent=Albl;zl.style.color=Acol;}
+  function f(v){var s=v.toFixed(8);return s.indexOf('.')>=0?s:s+'.0';}
+  return 'precision highp float;\n'+
+'uniform vec2 res;uniform mat3 rot;uniform float zoom;\n'+
+'float S11='+f(S11)+';float Gamma='+f(Gamma)+';float Emax='+f(Emax)+';\n'+
+'float Edir(vec3 n){float w=n.x*n.x*n.y*n.y+n.y*n.y*n.z*n.z+n.z*n.z*n.x*n.x;return 1.0/max(abs(S11-(Gamma*0.5)*w),1e-6);}\n'+
+'float implicit(vec3 P){float r=length(P);if(r<0.001)return -1.0;return r-Edir(P/r)/Emax;}\n'+
+'vec3 nrm(vec3 P){float e=0.004;return normalize(vec3(implicit(P+vec3(e,0.0,0.0))-implicit(P-vec3(e,0.0,0.0)),implicit(P+vec3(0.0,e,0.0))-implicit(P-vec3(0.0,e,0.0)),implicit(P+vec3(0.0,0.0,e))-implicit(P-vec3(0.0,0.0,e))));}\n'+
+'vec3 palette(float t){vec3 a=vec3(0.5,0.5,0.5),b=vec3(0.5,0.5,0.5),c=vec3(1.0,1.0,1.0),d=vec3(0.0,0.33,0.67);return a+b*cos(6.28318*(c*t+d));}\n'+
+'void main(){\n'+
+'  vec2 uv=(gl_FragCoord.xy-res*0.5)/min(res.x,res.y);\n'+
+'  vec3 ro=rot*vec3(0.0,0.0,zoom);vec3 rd=normalize(rot*vec3(uv.x,uv.y,-1.6));\n'+
+'  float r=clamp(length(uv)*1.1,0.0,1.0);\n'+
+'  vec3 bgCol=mix(vec3(0.07,0.09,0.22),vec3(0.01,0.01,0.04),r*r);vec4 bg=vec4(bgCol,1.0);\n'+
+'  float bR=1.15;float b2=dot(ro,rd),c2=dot(ro,ro)-bR*bR;float disc=b2*b2-c2;\n'+
+'  if(disc<0.0){gl_FragColor=bg;return;}\n'+
+'  float sq=sqrt(disc);float tEn=max(-b2-sq,0.0),tEx=-b2+sq;\n'+
+'  if(tEx<0.0){gl_FragColor=bg;return;}\n'+
+'  float t=tEn,hit=-1.0,ss=0.018;float prev=implicit(ro+rd*t);\n'+
+'  for(int i=0;i<280;i++){t+=ss;if(t>tEx)break;float g=implicit(ro+rd*t);if(prev*g<0.0){hit=t-ss*(g/(g-prev));break;}prev=g;}\n'+
+'  if(hit<0.0){gl_FragColor=bg;return;}\n'+
+'  vec3 pos=ro+rd*hit;vec3 n=nrm(pos);if(dot(n,-rd)<0.0)n=-n;\n'+
+'  float Eval=Edir(normalize(pos));float Enorm=clamp(Eval/Emax,0.0,1.0);\n'+
+'  float dy=dot(n,vec3(0.0,1.0,0.0)),dz=dot(n,vec3(0.0,0.0,1.0));\n'+
+'  float hue=dy*dy*0.33+dz*dz*0.67+Enorm*0.15;\n'+
+'  vec3 iridBase=palette(hue);vec3 iridShift=palette(hue+0.5);\n'+
+'  vec3 l1=normalize(vec3(1.0,1.8,2.0)),l2=normalize(vec3(-0.8,-0.3,0.6));\n'+
+'  float l3=max(dot(n,normalize(vec3(-0.5,-1.0,-1.5))),0.0)*0.3;\n'+
+'  float diff=0.35+max(dot(n,l1),0.0)*0.7+max(dot(n,l2),0.0)*0.25+l3;\n'+
+'  float spec1=pow(max(dot(reflect(-l1,n),-rd),0.0),120.0)*1.5;\n'+
+'  float spec2=pow(max(dot(reflect(-l1,n),-rd),0.0),20.0)*0.4;\n'+
+'  float rim=pow(1.0-max(dot(n,-rd),0.0),2.5)*0.8;\n'+
+'  float fresnel=pow(1.0-max(dot(n,-rd),0.0),3.0);\n'+
+'  vec3 col=mix(iridBase,iridShift,Enorm*0.35)*diff;\n'+
+'  col+=iridShift*fresnel*0.6;col+=vec3(spec1+spec2);col+=iridShift*rim*0.45;\n'+
+'  col*=(0.7+Enorm*0.4);\n'+
+'  gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);\n'+
+'}';
+}
+
+function mkSShader(type,src){
+  var s=sgl.createShader(type);
+  sgl.shaderSource(s,src);sgl.compileShader(s);
+  if(!sgl.getShaderParameter(s,sgl.COMPILE_STATUS))console.error(sgl.getShaderInfoLog(s));
+  return s;
+}
+
+function initStiffnessGL(){
+  var cv=document.getElementById('ellcv');
+  var wrap=document.getElementById('ellcv-wrap');
+  var w=Math.max(wrap?wrap.offsetWidth:80,40);
+  cv.width=w; cv.height=w;
+  sgl=cv.getContext('webgl');
+  if(!sgl){cv.style.display='none';return false;}
+  if(!squadBuf){
+    squadBuf=sgl.createBuffer();
+    sgl.bindBuffer(sgl.ARRAY_BUFFER,squadBuf);
+    sgl.bufferData(sgl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),sgl.STATIC_DRAW);
+  }
+  sRotMat=smat3Mul(sRotAxisAngle(0,1,0,0.6),sRotAxisAngle(1,0,0,-0.3));
+  sInitialized=true;
+  (function sloop(){requestAnimationFrame(sloop);drawStiffnessSurface();})();
+  return true;
+}
+
+function rebuildStiffnessShader(Ex,Ey,Ez,Gxy,nu){
+  if(!sInitialized&&!initStiffnessGL())return;
+  var Emean=(Ex+Ey+Ez)/3;
+  sZoom=3.4*(Math.max(Ex,Ey,Ez)*1.08/Emean);
+  var prg=sgl.createProgram();
+  sgl.attachShader(prg,mkSShader(sgl.VERTEX_SHADER,SVERT));
+  sgl.attachShader(prg,mkSShader(sgl.FRAGMENT_SHADER,buildStiffFrag(Ex,Ey,Ez,Gxy,nu)));
+  sgl.linkProgram(prg);
+  if(!sgl.getProgramParameter(prg,sgl.LINK_STATUS)){console.error(sgl.getProgramInfoLog(prg));return;}
+  if(sprog)sgl.deleteProgram(sprog);
+  sprog=prg;sgl.useProgram(sprog);
+  sgl.bindBuffer(sgl.ARRAY_BUFFER,squadBuf);
+  var loc=sgl.getAttribLocation(sprog,'p');
+  sgl.enableVertexAttribArray(loc);sgl.vertexAttribPointer(loc,2,sgl.FLOAT,false,0,0);
+  suRes=sgl.getUniformLocation(sprog,'res');
+  suRot=sgl.getUniformLocation(sprog,'rot');
+  suZoom=sgl.getUniformLocation(sprog,'zoom');
+}
+
+function drawStiffnessSurface(){
+  if(!sprog||!suRes)return;
+  var cv=document.getElementById('ellcv');
+  var wrap=document.getElementById('ellcv-wrap');
+  // Always sync canvas pixel dimensions from wrapper — keeps it square at any viewport width
+  var w=Math.max(wrap?wrap.offsetWidth:cv.offsetWidth,40);
+  if(cv.width!==w){cv.width=w;cv.height=w;}
+  sRotMat=smat3Mul(sRotAxisAngle(0,1,0,0.003),sRotMat);
+  sRotMat=sOrthonorm(sRotMat);
+  sgl.viewport(0,0,cv.width,cv.height);
+  sgl.uniform2f(suRes,cv.width,cv.height);
+  sgl.uniformMatrix3fv(suRot,false,new Float32Array(sRotMat));
+  sgl.uniform1f(suZoom,sZoom);
+  sgl.drawArrays(sgl.TRIANGLE_STRIP,0,4);
+}
+
+// ── Homogenization ────────────────────────────────────────────────────────
+var lastHomogResult=null;
+
+function homoPrepass(params){
+  var N=16,SCALE=5.0/Math.PI,mn=Infinity,mx=-Infinity;
+  for(var zi=0;zi<N;zi++) for(var yi=0;yi<N;yi++) for(var xi=0;xi<N;xi++){
+    var px=((xi/(N-1))*2-1)*Math.PI,py=((yi/(N-1))*2-1)*Math.PI,pz=((zi/(N-1))*2-1)*Math.PI;
+    var v=DeterministicNoise.sample(params,px*SCALE*params.frequency,py*SCALE*params.frequency,pz*SCALE*params.frequency);
+    if(v<mn)mn=v; if(v>mx)mx=v;
+  }
+  var range=mx-mn;
+  return{noiseMin:mn-range*0.05,noiseMax:mx+range*0.05};
+}
+
+function voxelizeNoise(params,noiseMin,noiseMax,N){
+  var SCALE=5.0/Math.PI,H=Math.PI,step=2*H/N,N2=N*N;
+  var vox=new Uint8Array(N*N*N),nSolid=0;
+  var mid=(noiseMin+noiseMax)*0.5,halfR=Math.max((noiseMax-noiseMin)*0.5,0.001);
+  var S=SCALE*params.frequency,sign=params.invert?-1:1;
+  for(var ix=0;ix<N;ix++){var x=-H+(ix+0.5)*step;
+    for(var iy=0;iy<N;iy++){var y=-H+(iy+0.5)*step;
+      for(var iz=0;iz<N;iz++){var z=-H+(iz+0.5)*step;
+        var raw=DeterministicNoise.sample(params,x*S,y*S,z*S);
+        var norm=(raw-mid)/halfR;
+        if(sign*(Math.abs(norm-params.isoLevel)-params.thickness)<0){vox[ix*N2+iy*N+iz]=1;nSolid++;}
+      }
+    }
+  }
+  return{vox:vox,nSolid:nSolid};
+}
+
+function computeMIL(vox,N){
+  var N2=N*N;
+  function mil(ax){var t=0;
+    for(var a=0;a<N;a++) for(var b=0;b<N;b++){var p=255;
+      for(var c=0;c<N;c++){
+        var i=ax===0?c*N2+a*N+b:ax===1?a*N2+c*N+b:a*N2+b*N+c;
+        var v=vox[i];if(p!==255&&v!==p)t++;p=v;}}
+    return t===0?N*1e6:(N*N*N)/(t*0.5);}
+  return{milX:mil(0),milY:mil(1),milZ:mil(2)};
+}
+
+function hsPlus(Es,nu,rho){
+  var K1=Es/(3*(1-2*nu)),G1=Es/(2*(1+nu));
+  var Kp=K1*rho/(1+(1-rho)*3*K1/(3*K1+4*G1));
+  var Gp=G1*rho/(1+(1-rho)*6*(K1+2*G1)/(5*G1*(3*K1+4*G1)));
+  return{Ehsp:9*Kp*Gp/(3*Kp+Gp),Gp:Gp};
+}
+
+function runNoiseHomogenization(params,N,Es,nu){
+  var bounds=homoPrepass(params);
+  var v=voxelizeNoise(params,bounds.noiseMin,bounds.noiseMax,N);
+  var rho=v.nSolid/(N*N*N);
+  var mil=computeMIL(v.vox,N);
+  var hx=1/(mil.milX*mil.milX),hy=1/(mil.milY*mil.milY),hz=1/(mil.milZ*mil.milZ);
+  var hmean=(hx+hy+hz)/3;
+  var wx=hx/hmean,wy=hy/hmean,wz=hz/hmean;
+  var hs=hsPlus(Es,nu,rho);
+  var Ex=hs.Ehsp*wx,Ey=hs.Ehsp*wy,Ez=hs.Ehsp*wz;
+  var Gxy=hs.Gp*Math.sqrt(wx*wy);
+  var nuEff=nu*(1-rho);
+  var aniso=Math.max(Ex,Ey,Ez)/Math.max(Math.min(Ex,Ey,Ez),1e-9);
+  return{rho:rho,Ex:Ex,Ey:Ey,Ez:Ez,Gxy:Gxy,nuEff:nuEff,aniso:aniso};
+}
+
+function displayHomoResults(res,N,Es){
+  function card(label,value,unit,color){
+    return '<div style="background:#0e0e1a;border:0.5px solid #2a2a3a;border-radius:8px;padding:7px 8px;text-align:center">'
+      +'<div style="font-size:15px;font-weight:500;color:'+(color||'#e0e0ff')+'">'+value+'</div>'
+      +'<div style="font-size:10px;color:#555;margin-top:1px">'+label+(unit?' <span style="color:#888">'+unit+'</span>':'')+'</div>'
+      +'</div>';
+  }
+  var anisoColor=res.aniso<1.1?'#888':res.aniso<1.5?'#22d3ee':'#e879f9';
+  document.getElementById('homoMetrics').innerHTML=
+    card('vol. fraction',(res.rho*100).toFixed(1)+'%','','#22c55e')+
+    card('E<sub>x</sub>',res.Ex.toFixed(2),'GPa','#22d3ee')+
+    card('E<sub>y</sub>',res.Ey.toFixed(2),'GPa','#e879f9')+
+    card('E<sub>z</sub>',res.Ez.toFixed(2),'GPa','#facc15')+
+    card('Zener A',res.aniso.toFixed(3),'',anisoColor)+
+    card('G<sub>xy</sub>',res.Gxy.toFixed(2),'GPa','#a78bfa')+
+    card('&#957;<sub>eff</sub>',res.nuEff.toFixed(3),'','#e0e0ff');
+  document.getElementById('homoResults').style.display='block';
+  document.getElementById('homoStatus').textContent=N+'³ · ρ='+(res.rho*100).toFixed(1)+'% · E_s='+Es+' GPa';
+  var btn=document.getElementById('exportBtn');
+  btn.textContent='Export JSON (+ homog)';
+  btn.style.borderColor='#7c6ff7'; btn.style.color='#a89cf7';
+  // Stiffness ellipsoid — needs homoResults visible first so ellcv has layout
+  setTimeout(function(){rebuildStiffnessShader(res.Ex,res.Ey,res.Ez,res.Gxy,res.nuEff);},50);
+}
+
+function onRunHomogenization(){
+  var btn=document.getElementById('runHomoBtn');
+  btn.disabled=true; btn.textContent='Running...';
+  document.getElementById('homoStatus').textContent='Voxelizing...';
+  setTimeout(function(){
+    var params=getParams();
+    var N=parseInt(document.getElementById('homoGrid').value);
+    var Es=parseFloat(document.getElementById('homoEs').value)||100;
+    var nu=parseFloat(document.getElementById('homoNu').value)||0.3;
+    var t0=performance.now();
+    var res=runNoiseHomogenization(params,N,Es,nu);
+    var elapsed=(performance.now()-t0).toFixed(0);
+    lastHomogResult={res:res,N:N,Es:Es,nu:nu,params:params};
+    displayHomoResults(res,N,Es);
+    document.getElementById('homoStatus').textContent+=(' · '+elapsed+'ms');
+    btn.disabled=false; btn.textContent='Run homogenization';
+  },30);
+}
+
+function buildExportJSON(){
+  var params=getParams();
+  var hasOctaves=['fbm','ridged','billow','warp'].indexOf(params.noiseType)>=0;
+  var surface={
+    type:'noise',noise_type:params.noiseType,
+    frequency:params.frequency,center:params.isoLevel,half_width:params.thickness,
+    smoothing:params.smoothing,topology:params.invert?'solid':'sheet',
+    octaves:hasOctaves?params.octaves:null,
+    lacunarity:hasOctaves?params.lacunarity:null,
+    gain:hasOctaves?params.gain:null,
+    warp_strength:params.noiseType==='warp'?params.warpStrength:null,
+    distance_metric:params.noiseType==='cellular'?params.distanceMetric:null,
+    curl_step:params.noiseType==='curl'?params.curlStep:null,
+    potential_scale:params.noiseType==='curl'?params.potentialScale:null
+  };
+  var geometry={
+    offset:params.isoLevel,
+    cell_scale:parseFloat((1/Math.max(params.frequency,0.001)).toFixed(3)),
+    mode:params.invert?'solid':'shell',
+    wall_thickness:params.thickness,
+    pipe_radius:null,phase_shift:null,gradient:{enabled:false}
+  };
+  var out={
+    meta:{version:'1.0.0',tool:'noise-scaffold-explorer',timestamp:new Date().toISOString(),preset:params.noiseType},
+    surface:surface,geometry:geometry
+  };
+  if(lastHomogResult){
+    var r=lastHomogResult;
+    out.homogenization={
+      grid:r.N,E_solid_GPa:r.Es,poisson:r.nu,
+      volume_fraction:parseFloat((r.res.rho*100).toFixed(2)),
+      Ex_GPa:parseFloat(r.res.Ex.toFixed(3)),Ey_GPa:parseFloat(r.res.Ey.toFixed(3)),Ez_GPa:parseFloat(r.res.Ez.toFixed(3)),
+      Gxy_GPa:parseFloat(r.res.Gxy.toFixed(3)),nu_eff:parseFloat(r.res.nuEff.toFixed(4)),
+      anisotropy:parseFloat(r.res.aniso.toFixed(4)),
+      surface_complexity:null,method:'MIL-HS',note:'statistical_homogeneity_assumed'
+    };
+  }
+  return out;
+}
+
+function onExportJSON(){
+  var data=buildExportJSON();
+  var json=JSON.stringify(data,null,2);
+  var ts=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  var blob=new Blob([json],{type:'application/json'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url; a.download='noise_'+data.meta.preset+'_'+ts+'.json';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+  navigator.clipboard.writeText(json).catch(function(){});
+  var btn=document.getElementById('exportBtn');
+  var orig=btn.textContent;
+  btn.textContent='Copied + downloaded ✓'; btn.style.color='#69f0ae'; btn.style.borderColor='#69f0ae';
+  setTimeout(function(){
+    btn.textContent=orig;
+    btn.style.color=lastHomogResult?'#a89cf7':'#666';
+    btn.style.borderColor=lastHomogResult?'#7c6ff7':'#2a2a3a';
+  },1800);
+}
+
+function onResChange(res){
+  currentResolution=res;
+  document.getElementById('btn64').classList.toggle('active',res===64);
+  document.getElementById('btn128').classList.toggle('active',res===128);
+  regenerate();
+}
+
+updateControlVisibility();
+setTimeout(function(){regenerate();},100);
+</script>
+</body>
+</html>
