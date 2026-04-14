@@ -1,6 +1,6 @@
 Noise Scaffold Explorer
 Browser-based design tool for noise-derived metamaterial scaffolds
-🔗 Launch the tool → (mshomper.github.io/noise-explorer) 🔗
+🔗 **[Launch the tool](https://mshomper.github.io/noise-explorer)**
 No installation. No server. Open the link and start designing.
 ---
 What it does
