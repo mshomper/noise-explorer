@@ -263,9 +263,30 @@ input[type=number]{font-size:12px;padding:2px 4px;background:#1a1a2e;border:0.5p
     </div>
     <button id="exportBtn" onclick="onExportJSON()">Export JSON</button>
 
+    <hr class="divider">
+
+    <!-- Mesh export -->
+    <div class="sec-lbl">export geometry</div>
+    <div class="homo-controls" style="margin-bottom:8px">
+      <label>resolution
+        <select id="meshRes">
+          <option value="64">64³ — fast preview (~5s)</option>
+          <option value="128" selected>128³ — standard (~30s)</option>
+          <option value="256">256³ — high fidelity (~2min)</option>
+        </select>
+      </label>
+      <button id="meshBtn" onclick="onExportSTL()"
+        style="font-size:12px;padding:4px 14px;border:0.5px solid #22d3ee;border-radius:20px;background:#22d3ee;color:#06080f;cursor:pointer;font-weight:500">
+        Export STL
+      </button>
+    </div>
+    <div id="meshStatus" style="font-size:11px;color:#555;min-height:15px;margin-bottom:4px"></div>
+    <div id="meshQuality" style="display:none;font-size:11px;line-height:1.7"></div>
+
   </div>
 </div>
 
+<script src="mesher.js"></script>
 <script>
 var currentGrid = null;
 var currentViewMode = 'section';
@@ -1483,6 +1504,39 @@ function onResChange(res){
   document.getElementById('btn64').classList.toggle('active',res===64);
   document.getElementById('btn128').classList.toggle('active',res===128);
   regenerate();
+}
+
+function onExportSTL(){
+  if(typeof Mesher==='undefined'){
+    document.getElementById('meshStatus').textContent='mesher.js not loaded — check console.';
+    return;
+  }
+  var N=parseInt(document.getElementById('meshRes').value);
+  var btn=document.getElementById('meshBtn');
+  btn.disabled=true; btn.textContent='Generating...';
+  document.getElementById('meshStatus').textContent='Starting...';
+  document.getElementById('meshQuality').style.display='none';
+  var json=buildExportJSON();
+  setTimeout(function(){
+    try{
+      var q=Mesher.downloadSTL(json,N,10.0,function(msg){
+        document.getElementById('meshStatus').textContent=msg;
+      });
+      var qDiv=document.getElementById('meshQuality');
+      var wt=q.watertight?
+        '<span style="color:#22c55e">&#10003; watertight</span>':
+        '<span style="color:#e879f9">&#9888; '+q.boundaryEdges+' boundary edges</span>';
+      var nm=q.nonManifold>0?' &nbsp;<span style="color:#facc15">&#9888; '+q.nonManifold+' non-manifold</span>':'';
+      var dg=q.degenCount>0?' &nbsp;<span style="color:#888">'+q.degenCount+' degenerate removed</span>':'';
+      qDiv.innerHTML='<span style="color:#e0e0ff">'+q.triCount.toLocaleString()+' triangles</span> &nbsp;'+wt+nm+dg;
+      qDiv.style.display='block';
+      document.getElementById('meshStatus').textContent='Done.';
+    }catch(e){
+      document.getElementById('meshStatus').textContent='Error: '+e.message;
+      console.error(e);
+    }
+    btn.disabled=false; btn.textContent='Export STL';
+  },50);
 }
 
 updateControlVisibility();
