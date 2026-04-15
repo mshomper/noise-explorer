@@ -206,19 +206,28 @@ function _voidField(surf, wx_world, wy_world, wz_world) {
 }
 
 // Public field evaluator for noise JSON
+// wx_world/wy_world/wz_world are in world space [-5,5]³
+// Noise coords = world * freq  (matches GridGenerator exactly — no SCALE needed here)
 function evaluateNoise(json, wx_world, wy_world, wz_world, noiseMin, noiseMax) {
   var surf = json.surface;
   var geom = json.geometry || {};
   var freq = surf.frequency || 0.3;
+  // Box SDF — clips scaffold to the grid boundary, matching the tool's sceneSDF
+  var bx = Math.abs(wx_world) - 5.0;
+  var by = Math.abs(wy_world) - 5.0;
+  var bz = Math.abs(wz_world) - 5.0;
+  var boxDist = Math.max(bx, by, bz);  // negative inside box, positive outside
   var scaffold = _evalNoiseField(surf, geom, noiseMin, noiseMax,
-    wx_world * SCALE * freq,
-    wy_world * SCALE * freq,
-    wz_world * SCALE * freq);
+    wx_world * freq,
+    wy_world * freq,
+    wz_world * freq);
+  // Intersect scaffold with box — caps open surfaces at grid boundary
+  var sdf = Math.max(scaffold, boxDist);
   if(surf.void_enabled) {
     var vf = _voidField(surf, wx_world, wy_world, wz_world);
-    return Math.max(scaffold, -vf);
+    return Math.max(sdf, -vf);
   }
-  return scaffold;
+  return sdf;
 }
 
 // Stub for TPMS JSON (pass 2 — trigonometric term evaluator)
@@ -259,12 +268,13 @@ function sampleGrid(json, N, statusCb) {
   var mn=Infinity, mx=-Infinity;
   var PP=16;
   for(var zi=0;zi<PP;zi++) for(var yi=0;yi<PP;yi++) for(var xi=0;xi<PP;xi++){
-    var px=((xi/(PP-1))*2-1)*Math.PI;
-    var py=((yi/(PP-1))*2-1)*Math.PI;
-    var pz=((zi/(PP-1))*2-1)*Math.PI;
+    // World coords [-5,5] — matching GridGenerator domain
+    var px=((xi/(PP-1))*2-1)*5.0;
+    var py=((yi/(PP-1))*2-1)*5.0;
+    var pz=((zi/(PP-1))*2-1)*5.0;
     var type = surf.noise_type || 'simplex';
     var raw;
-    var sx=px*SCALE*freq, sy=py*SCALE*freq, sz=pz*SCALE*freq;
+    var sx=px*freq, sy=py*freq, sz=pz*freq;  // no SCALE — matches GridGenerator
     if(type==='simplex')   raw=Noise.snoise(sx,sy,sz);
     else if(type==='cellular') raw=Noise.cellular(sx,sy,sz,surf.distance_metric||'euclidean');
     else if(type==='fbm')  raw=Noise.fbm(sx,sy,sz,surf.octaves||4,surf.lacunarity||2.0,surf.gain||0.5);
@@ -801,18 +811,18 @@ function toBinarySTL(mesh, N, cellSizeMm) {
     var bx=verts[b*3]*scale, by=verts[b*3+1]*scale, bz=verts[b*3+2]*scale;
     var cx=verts[c*3]*scale, cy=verts[c*3+1]*scale, cz=verts[c*3+2]*scale;
 
-    // Face normal (flat shading)
-    var ux=bx-ax,uy=by-ay,uz=bz-az;
-    var vx=cx-ax,vy=cy-ay,vz=cz-az;
-    var nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    // Reverse winding (a,c,b) so outward normals point away from scaffold material
+    var ux=cx-ax,uy=cy-ay,uz=cz-az;
+    var vvx=bx-ax,vvy=by-ay,vvz=bz-az;
+    var nx=uy*vvz-uz*vvy, ny=uz*vvx-ux*vvz, nz=ux*vvy-uy*vvx;
     var nl=Math.sqrt(nx*nx+ny*ny+nz*nz)||1;
     nx/=nl; ny/=nl; nz/=nl;
 
     view.setFloat32(offset,    nx, true); view.setFloat32(offset+4,  ny, true); view.setFloat32(offset+8,  nz, true);
     view.setFloat32(offset+12, ax, true); view.setFloat32(offset+16, ay, true); view.setFloat32(offset+20, az, true);
-    view.setFloat32(offset+24, bx, true); view.setFloat32(offset+28, by, true); view.setFloat32(offset+32, bz, true);
-    view.setFloat32(offset+36, cx, true); view.setFloat32(offset+40, cy, true); view.setFloat32(offset+44, cz, true);
-    view.setUint16(offset+48, 0, true);  // attribute byte count
+    view.setFloat32(offset+24, cx, true); view.setFloat32(offset+28, cy, true); view.setFloat32(offset+32, cz, true);
+    view.setFloat32(offset+36, bx, true); view.setFloat32(offset+40, by, true); view.setFloat32(offset+44, bz, true);
+    view.setUint16(offset+48, 0, true);
     offset += 50;
   }
   return buf;
