@@ -188,13 +188,13 @@ function _voidField(surf, wx_world, wy_world, wz_world) {
     return Noise.snoise(wx_world*hf+17.3, wy_world*hf+5.8, wz_world*hf+11.2) - hr;
   }
   // Spherical: Worley F1
+  function frac(x){return x-Math.floor(x);}
   var px=wx_world*hf, py=wy_world*hf, pz=wz_world*hf;
   var pix=Math.floor(px), piy=Math.floor(py), piz=Math.floor(pz);
   var pfx=px-pix, pfy=py-piy, pfz=pz-piz;
   var d1=1e9;
   for(var oz=-1;oz<=1;oz++) for(var oy=-1;oy<=1;oy++) for(var ox=-1;ox<=1;ox++){
     var cx=pix+ox, cy=piy+oy, cz=piz+oz;
-    function frac(x){return x-Math.floor(x);}
     var rpx=frac(Math.sin(cx*127.1+cy*311.7+cz*74.7)*43758.5453);
     var rpy=frac(Math.sin(cx*269.5+cy*183.3+cz*246.1)*43758.5453);
     var rpz=frac(Math.sin(cx*113.5+cy*271.9+cz*124.6)*43758.5453);
@@ -825,14 +825,26 @@ function toBinarySTL(mesh, N, cellSizeMm) {
 // Returns mesh object with attached quality report.
 function meshFromJSON(json, N, statusCb) {
   N = N || 64;
+
+  // Validate input
+  if(!json || !json.surface) throw new Error('Invalid JSON: missing surface object');
+  if(json.surface.type !== 'noise') throw new Error('Surface type "'+json.surface.type+'" not yet supported for mesh export');
+
   if(statusCb) statusCb('Sampling grid...');
-  var grid = sampleGrid(json, N, statusCb);
+  var grid;
+  try { grid = sampleGrid(json, N, statusCb); }
+  catch(e) { throw new Error('Grid sampling failed: ' + e.message); }
+  if(!grid || grid.length === 0) throw new Error('Grid sampling returned empty result');
 
   if(statusCb) statusCb('Running marching cubes...');
-  var mesh = marchingCubes(grid, N, statusCb);
+  var mesh;
+  try { mesh = marchingCubes(grid, N, statusCb); }
+  catch(e) { throw new Error('Marching cubes failed: ' + e.message); }
+  if(!mesh || mesh.triCount === 0) throw new Error('Marching cubes produced no triangles — try adjusting Center or Half-width so the surface is inside the domain');
 
   if(statusCb) statusCb('Smoothing (Taubin)...');
-  taubinSmooth(mesh, 0.5, -0.53, 10, statusCb);
+  try { taubinSmooth(mesh, 0.5, -0.53, 10, statusCb); }
+  catch(e) { throw new Error('Smoothing failed: ' + e.message); }
 
   if(statusCb) statusCb('Checking quality...');
   mesh.quality = checkQuality(mesh);
