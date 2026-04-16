@@ -1,12 +1,19 @@
-Noise Scaffold Explorer
+f13ld.noise
+
 Browser-based design tool for noise-derived metamaterial scaffolds
-🔗 **[Launch the tool](https://mshomper.github.io/noise-explorer)**
+
+🔗 **[Launch the tool](https://mshomper.github.io/f13ld.noise)**
+
 No installation. No server. Open the link and start designing.
+
 ---
+
 What it does
-The Noise Scaffold Explorer generates three-dimensional porous scaffold geometry from mathematical noise fields — the same underlying mathematics used to simulate natural textures and terrains in computer graphics. Unlike crystallographic lattice structures (TPMS), noise-based scaffolds produce organic, statistically homogeneous geometries that closely resemble biological tissues such as trabecular bone, open-cell foam, and vascular networks.
+field.noise generates three-dimensional porous scaffold geometry from mathematical noise fields — the same underlying mathematics used to simulate natural textures and terrains in computer graphics. Unlike crystallographic lattice structures (TPMS), noise-based scaffolds produce organic, statistically homogeneous geometries that closely resemble biological tissues such as trabecular bone, open-cell foam, and vascular networks.
 The tool runs entirely in your browser using WebGL. You can explore designs visually in real time across a 2D cross-section view and an interactive 3D raymarched render, then export a JSON parameter file compatible with the companion TPMS Builder sweep tool for downstream mechanical analysis.
+
 ---
+
 Noise types
 Type	Character	Biological analog
 Simplex	Smooth, rolling hills and valleys	Generic open-pore network
