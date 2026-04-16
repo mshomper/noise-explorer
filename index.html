@@ -10,8 +10,8 @@ html,body{min-height:100%;background:#06080f;color:#e0e0ff;font-family:system-ui
 #container{display:flex;flex-direction:column;height:100vh}
 #cw{position:relative;background:#06080f;border-radius:12px 12px 0 0;overflow:hidden;border:0.5px solid #2a2a3a;flex:1;min-height:0;margin:16px 14px 0}
 canvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges}
-#status{position:absolute;top:10px;right:10px;background:rgba(6,8,15,0.85);padding:5px 10px;border-radius:6px;font-size:11px;color:#555;pointer-events:none;border:0.5px solid #2a2a3a}
-#indicators{position:absolute;top:10px;left:10px;display:none;gap:8px;flex-direction:column;pointer-events:none}
+#status{position:absolute;top:10px;right:10px;background:rgba(6,8,15,0.85);padding:5px 10px;border-radius:6px;font-size:11px;color:#555;pointer-events:none;border:0.5px solid #2a2a3a;z-index:10}
+#indicators{position:absolute;top:10px;left:10px;display:none;gap:8px;flex-direction:column;pointer-events:none;z-index:10}
 .ind-pill{display:flex;align-items:center;gap:5px;background:rgba(6,8,15,0.85);padding:4px 8px;border-radius:6px;font-size:10px;border:0.5px solid #2a2a3a;white-space:nowrap}
 .ind-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .ind-label{color:#555;text-transform:uppercase;letter-spacing:0.06em}
@@ -1052,7 +1052,7 @@ Raymarcher.prototype._submitShader=function(params){
   gl.attachShader(prg,vs_);gl.attachShader(prg,fs_);
   gl.linkProgram(prg);
   gl.deleteShader(vs_);gl.deleteShader(fs_);
-  // Store as pending — _startLoop polls each frame and activates when ready
+  // Delete the previous pending program if any
   if(this._pendingProg)gl.deleteProgram(this._pendingProg);
   this._pendingProg=prg;
   this._pendingParams=params;
@@ -1095,14 +1095,16 @@ Raymarcher.prototype._activateProgram=function(prg){
 Raymarcher.prototype.setParams=function(params){
   if(!this.gl)return;
   var prev=this.currentParams;
-  var needPrepass=!prev||!this.prog||
+  var needPrepass=(!prev||(!this.prog&&!this._compiling))||
     params.noiseType!==prev.noiseType||
     params.frequency!==prev.frequency||
     params.octaves!==prev.octaves||
     params.lacunarity!==prev.lacunarity||
     params.gain!==prev.gain||
     params.warpStrength!==prev.warpStrength||
-    params.distanceMetric!==prev.distanceMetric;
+    params.distanceMetric!==prev.distanceMetric||
+    params.curlStep!==prev.curlStep||
+    params.potentialScale!==prev.potentialScale;
   var needRebuild=(!prev||(!this.prog&&!this._compiling))||
     params.noiseType!==prev.noiseType||
     params.distanceMetric!==prev.distanceMetric||
@@ -1140,7 +1142,6 @@ Raymarcher.prototype.render=function(){
         console.error('Shader link failed:',gl.getProgramInfoLog(this._pendingProg));
         gl.deleteProgram(this._pendingProg);
         setShaderStatus(false);
-        document.getElementById('status').textContent='Shader error — see console';
       }
       this._pendingProg=null;this._compiling=false;this._dirty=true;
     }
@@ -1148,13 +1149,8 @@ Raymarcher.prototype.render=function(){
   if(!this.prog)return;
   var cssW=this.canvas.clientWidth,cssH=this.canvas.clientHeight;
   if(cssW===0||cssH===0)return;
-  // Internal render resolution cap — the single most effective GPU load reduction.
-  // CSS width:100%;height:100% upscales the canvas automatically.
-  // At 420px internal vs 900px CSS: 4.6× fewer fragment invocations.
-  // Scaffold geometry reads clearly at this resolution; raymarched SDFs
-  // are inherently soft so there is no aliasing penalty.
   var MAX_DIM=420;
-  var scale=Math.min(1.0, MAX_DIM/Math.max(cssW,cssH));
+  var scale=Math.min(1.0,MAX_DIM/Math.max(cssW,cssH));
   var w=Math.round(cssW*scale),h=Math.round(cssH*scale);
   if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}
   gl.viewport(0,0,w,h);
