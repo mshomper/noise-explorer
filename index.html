@@ -242,6 +242,7 @@ input[type=number]{font-size:12px;padding:2px 4px;background:#1a1a2e;border:0.5p
         <label>topology</label>
         <div class="mode-strip">
           <button class="mode-btn active" id="btnSheet" onclick="onTopologyToggle('sheet')">Sheet</button>
+          <button class="mode-btn" id="btnHalf" onclick="onTopologyToggle('half')">Half-solid</button>
           <button class="mode-btn" id="btnSolid" onclick="onTopologyToggle('solid')">Solid</button>
         </div>
       </div>
@@ -348,37 +349,17 @@ input[type=number]{font-size:12px;padding:2px 4px;background:#1a1a2e;border:0.5p
     </div>
     <button id="exportBtn" onclick="onExportJSON()">Export JSON</button>
 
-    <hr class="divider">
-
-    <!-- Mesh export -->
-    <div class="sec-lbl">export geometry</div>
-    <div class="homo-controls" style="margin-bottom:8px">
-      <label>resolution
-        <select id="meshRes">
-          <option value="64">64³ — fast preview (~5s)</option>
-          <option value="128" selected>128³ — standard (~30s)</option>
-          <option value="256">256³ — high fidelity (~2min)</option>
-        </select>
-      </label>
-      <button id="meshBtn" onclick="onExportSTL()"
-        style="font-size:12px;padding:4px 14px;border:0.5px solid #22d3ee;border-radius:20px;background:#22d3ee;color:#06080f;cursor:pointer;font-weight:500">
-        Export STL
-      </button>
-    </div>
-    <div id="meshStatus" style="font-size:11px;color:#555;min-height:15px;margin-bottom:4px"></div>
-    <div id="meshQuality" style="display:none;font-size:11px;line-height:1.7"></div>
 
   </div>
 </div>
 
-<script src="mesher.js" onerror="console.warn('mesher.js not found — STL export unavailable')"></script>
 <script>
 var currentGrid = null;
 var currentViewMode = 'section';
 var currentResolution = 128;
 var currentQuality = 'low';
 var debounceTimer = null;
-var invertSolid = false;
+var topoMode = 'sheet';
 var voidEnabled = false;
 var voidType = 'spherical';
 var currentSliceAxis = 'z';
@@ -428,13 +409,17 @@ function onVoidTypeChange(type) {
 }
 
 function onTopologyToggle(mode) {
-  invertSolid = (mode === 'solid');
-  document.getElementById('btnSheet').style.background  = invertSolid ? 'transparent' : '#7c6ff7';
-  document.getElementById('btnSheet').style.color        = invertSolid ? '#888' : '#fff';
-  document.getElementById('btnSheet').style.borderColor  = invertSolid ? '#3a3a5a' : '#7c6ff7';
-  document.getElementById('btnSolid').style.background  = invertSolid ? '#7c6ff7' : 'transparent';
-  document.getElementById('btnSolid').style.color        = invertSolid ? '#fff' : '#888';
-  document.getElementById('btnSolid').style.borderColor  = invertSolid ? '#7c6ff7' : '#3a3a5a';
+  topoMode = mode;
+  ['Sheet','Half','Solid'].forEach(function(m){
+    var id='btn'+m,active=(mode===m.toLowerCase());
+    var el=document.getElementById(id);if(!el)return;
+    el.style.background =active?'#7c6ff7':'transparent';
+    el.style.color      =active?'#fff':'#888';
+    el.style.borderColor=active?'#7c6ff7':'#3a3a5a';
+  });
+  var isHalf=(mode==='half');
+  var thEl=document.getElementById('thickness'),thRow=thEl&&thEl.closest('.sc-group');
+  if(thRow)thRow.style.display=isHalf?'none':'';
   regenerate();
 }
 
@@ -665,11 +650,15 @@ GridGenerator.prototype.generate = function(params) {
   // Void evaluation (27-neighbor Worley) at 128³ would be too slow for interactive use.
   var mid=(minVal+maxVal)*0.5;
   var halfRange=Math.max((maxVal-minVal)*0.5,0.001);
-  var sign=params.invert?-1:1;
+  
   var grid=new Float32Array(size);
   for(var i=0;i<size;i++){
     var norm=(noiseValues[i]-mid)/halfRange;
-    grid[i]=sign*(Math.abs(norm-params.isoLevel)-params.thickness);
+    var gv;
+    if(params.topoMode==='half')gv=norm-params.isoLevel;
+    else if(params.topoMode==='solid')gv=Math.abs(norm-params.isoLevel)-params.thickness;
+    else gv=params.thickness-Math.abs(norm-params.isoLevel);
+    grid[i]=gv;
   }
   return grid;
 };
@@ -1014,9 +1003,9 @@ Raymarcher.prototype._buildFrag=function(params){
     'precision highp float;',
     'out vec4 fragColor;',
     'uniform vec2 res;uniform mat3 rot;uniform float zoom;',
-    'uniform float freq;uniform float thickness;uniform float isoLevel;',
+    'uniform float freq;uniform float thickness;uniform float isoLevel;uniform float uTopoMode;',
     'uniform float noiseMin;uniform float noiseMax;',
-    'uniform float sigma;uniform float invertSign;',
+    'uniform float sigma;',
     'uniform float uGain;uniform float uLacunarity;uniform float uWarpStrength;uniform float uOctaves;',
     'uniform float uScaleX;uniform float uScaleY;uniform float uScaleZ;',
     isCurl?'uniform float curlStep;uniform float potScale;':'',
@@ -1042,7 +1031,7 @@ Raymarcher.prototype._buildFrag=function(params){
     ' float mid=(noiseMax+noiseMin)*0.5;',
     ' float halfR=max((noiseMax-noiseMin)*0.5,0.001);',
     ' float norm=(raw-mid)/halfR;',
-    ' float scaffold=invertSign*(abs(norm-isoLevel)-thickness);',
+    '  float scaffold;','  if(uTopoMode<0.5) scaffold=thickness-abs(norm-isoLevel);','  else if(uTopoMode<1.5) scaffold=norm-isoLevel;','  else scaffold=abs(norm-isoLevel)-thickness;',
     voidEnabled?' return max(scaffold,-voidField(p));':' return scaffold;',
     '}',
     'vec3 boxNormal(vec3 pos,float H){vec3 ap=abs(pos)/H;if(ap.x>ap.y&&ap.x>ap.z)return vec3(sign(pos.x),0.0,0.0);if(ap.y>ap.z)return vec3(0.0,sign(pos.y),0.0);return vec3(0.0,0.0,sign(pos.z));}',
@@ -1140,7 +1129,7 @@ Raymarcher.prototype._activateProgram=function(prg){
   this.uNoiseMin=gl.getUniformLocation(prg,'noiseMin');
   this.uNoiseMax=gl.getUniformLocation(prg,'noiseMax');
   this.uSigma=gl.getUniformLocation(prg,'sigma');
-  this.uInvertSign=gl.getUniformLocation(prg,'invertSign');
+  this.uTopoMode=gl.getUniformLocation(prg,'uTopoMode');
   this.uGain=gl.getUniformLocation(prg,'uGain');
   this.uLacunarity=gl.getUniformLocation(prg,'uLacunarity');
   this.uWarpStrength=gl.getUniformLocation(prg,'uWarpStrength');
@@ -1227,7 +1216,7 @@ Raymarcher.prototype.render=function(){
     gl.uniform1f(this.uNoiseMin,this.noiseMin);
     gl.uniform1f(this.uNoiseMax,this.noiseMax);
     gl.uniform1f(this.uSigma,p.smoothing||0);
-    gl.uniform1f(this.uInvertSign,p.invert?-1.0:1.0);
+    gl.uniform1f(this.uTopoMode,p.topoMode==='half'?1.0:p.topoMode==='solid'?2.0:0.0);
     if(this.uGain)gl.uniform1f(this.uGain,p.gain||0.5);
     if(this.uLacunarity)gl.uniform1f(this.uLacunarity,p.lacunarity||2.0);
     if(this.uWarpStrength)gl.uniform1f(this.uWarpStrength,p.warpStrength||1.0);
@@ -1291,7 +1280,7 @@ function getParams(){
     frequency:     parseFloat(document.getElementById('frequency').value),
     isoLevel:      parseFloat(document.getElementById('isoLevel').value),
     thickness:     parseFloat(document.getElementById('thickness').value),
-    invert:        invertSolid,
+    invert:        topoMode==='solid',topoMode:topoMode,
     smoothing:     parseFloat(document.getElementById('smoothing').value),
     octaves:       parseInt(document.getElementById('octaves').value),
     lacunarity:    parseFloat(document.getElementById('lacunarity').value),
@@ -1567,7 +1556,11 @@ function voxelizeNoise(params,noiseMin,noiseMax,N){
       for(var iz=0;iz<N;iz++){var z=-H+(iz+0.5)*step;
         var raw=DeterministicNoise.sample(params,x*S,y*S,z*S);
         var norm=(raw-mid)/halfR;
-        if(sign*(Math.abs(norm-params.isoLevel)-params.thickness)<0){vox[ix*N2+iy*N+iz]=1;nSolid++;}
+        var solid=false;
+        if(params.topoMode==='half')solid=(norm>params.isoLevel);
+        else if(params.topoMode==='solid')solid=(Math.abs(norm-params.isoLevel)<params.thickness);
+        else solid=(Math.abs(norm-params.isoLevel)<params.thickness);
+        if(solid){vox[ix*N2+iy*N+iz]=1;nSolid++;}
       }
     }
   }
@@ -1672,7 +1665,7 @@ function buildExportJSON(){
   var geometry={
     offset:params.isoLevel,
     cell_scale:parseFloat((1/Math.max(params.frequency,0.001)).toFixed(3)),
-    mode:params.invert?'solid':'shell',
+    mode:params.topoMode==='solid'?'solid':params.topoMode==='half'?'half':'shell',
     wall_thickness:params.thickness,
     pipe_radius:null,phase_shift:null,gradient:{enabled:false}
   };
@@ -1738,38 +1731,6 @@ function onQualityChange(q){
   regenerate();
 }
 
-function onExportSTL(){
-  if(typeof Mesher==='undefined'){
-    document.getElementById('meshStatus').textContent='mesher.js not loaded — check console.';
-    return;
-  }
-  var N=parseInt(document.getElementById('meshRes').value);
-  var btn=document.getElementById('meshBtn');
-  btn.disabled=true; btn.textContent='Generating...';
-  document.getElementById('meshStatus').textContent='Starting...';
-  document.getElementById('meshQuality').style.display='none';
-  var json=buildExportJSON();
-  setTimeout(function(){
-    try{
-      var q=Mesher.downloadSTL(json,N,10.0,function(msg){
-        document.getElementById('meshStatus').textContent=msg;
-      });
-      var qDiv=document.getElementById('meshQuality');
-      var wt=q.watertight?
-        '<span style="color:#22c55e">&#10003; watertight</span>':
-        '<span style="color:#e879f9">&#9888; '+q.boundaryEdges+' boundary edges</span>';
-      var nm=q.nonManifold>0?' &nbsp;<span style="color:#facc15">&#9888; '+q.nonManifold+' non-manifold</span>':'';
-      var dg=q.degenCount>0?' &nbsp;<span style="color:#888">'+q.degenCount+' degenerate removed</span>':'';
-      qDiv.innerHTML='<span style="color:#e0e0ff">'+q.triCount.toLocaleString()+' triangles</span> &nbsp;'+wt+nm+dg;
-      qDiv.style.display='block';
-      document.getElementById('meshStatus').textContent='Done.';
-    }catch(e){
-      document.getElementById('meshStatus').textContent='Error: '+e.message;
-      console.error(e);
-    }
-    btn.disabled=false; btn.textContent='Export STL';
-  },50);
-}
 
 updateControlVisibility();
 setTimeout(function(){regenerate();},100);
